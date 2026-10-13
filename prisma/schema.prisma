@@ -1,0 +1,112 @@
+// MailPulse - Bulk Email Sender schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model EmailSession {
+  id            String   @id @default(cuid())
+  name          String
+  status        String   @default("draft") // draft | queued | running | paused | completed | failed | cancelled
+  totalEmails   Int      @default(0)
+  sentCount     Int      @default(0)
+  failedCount   Int      @default(0)
+  pendingCount  Int      @default(0)
+
+  // Sender
+  fromName      String
+  fromEmail     String
+
+  // Provider
+  providerType  String   // gmail | yahoo | smtp
+  smtpHost      String?
+  smtpPort      Int?
+  smtpSecure    Boolean?
+
+  // Email content
+  subject       String
+  bodyHtml      String
+  plainText     String?
+
+  // Signature
+  signatureText String?
+  signatureImage String? // base64 data URL or path
+
+  // Sending config
+  batchSize     Int      @default(10)
+  batchDelayMs  Int      @default(2000)
+  perEmailDelayMs Int    @default(500)
+
+  // Stats
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  recipients    EmailRecipient[]
+  attachments   Attachment[]
+}
+
+model EmailRecipient {
+  id            String   @id @default(cuid())
+  sessionId     String
+  email         String
+  name          String
+  status        String   @default("pending") // pending | sending | sent | failed
+  error         String?
+  attemptCount  Int      @default(0)
+  sentAt        DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  session       EmailSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([status])
+}
+
+model Attachment {
+  id            String   @id @default(cuid())
+  sessionId     String
+  filename      String
+  filepath      String
+  mimetype      String
+  size          Int
+  createdAt     DateTime @default(now())
+
+  session       EmailSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+model Signature {
+  id            String   @id @default(cuid())
+  name          String
+  type          String   // text | image
+  content       String   // text content or base64 data URL
+  createdAt     DateTime @default(now())
+}
+
+model EmailTemplate {
+  id            String   @id @default(cuid())
+  name          String
+  subject       String
+  body          String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model SendLog {
+  id            String   @id @default(cuid())
+  sessionId     String
+  level         String   // info | success | warn | error
+  message       String
+  recipient     String?
+  createdAt     DateTime @default(now())
+
+  @@index([sessionId])
+}
