@@ -1,11 +1,11 @@
-import { NextResponse } from 'next/server'
+ï»¿import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { engineHealthy } from '@/lib/sender-client'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// GET /api/health — liveness of the whole stack for the UI status dot and
+// GET /api/health - liveness of the whole stack for the UI status dot and
 // for uptime monitors in production.
 export async function GET() {
   const checks: Record<string, any> = {
