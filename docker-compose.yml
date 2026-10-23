@@ -1,0 +1,66 @@
+# ─────────────────────────────────────────────────────────────
+# MailPulse — local Docker deployment (simulates real-world hosting)
+#   first run:  docker compose up -d --build
+#   open:       http://localhost:8088
+# Data persists in ./docker-data (DB, encryption key, uploads).
+# Swap :8088/simulated gateway for a VPS later with zero changes —
+# the CADDY endpoint is host-portable.
+# ─────────────────────────────────────────────────────────────
+services:
+  web:
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      DATABASE_URL: "file:/data/db/mailpulse.db"
+      UPLOAD_DIR: "/data/upload"
+      SECRET_KEY_PATH: "/data/db/secret.key"
+      ENGINE_URL: "http://engine:3003"
+      ENGINE_CONTROL_URL: "http://engine:3004"
+    volumes:
+      - ./docker-data/db:/data/db
+      - ./docker-data/upload:/data/upload
+    depends_on:
+      - engine
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://web:3000/api/health >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  engine:
+    build:
+      context: .
+      target: engine
+    restart: unless-stopped
+    expose:
+      - "3003"
+      - "3004"
+    environment:
+      DATABASE_URL: "file:/data/db/mailpulse.db"
+      UPLOAD_DIR: "/data/upload"
+      PORT: "3003"
+      CONTROL_PORT: "3004"
+    volumes:
+      - ./docker-data/db:/data/db
+      - ./docker-data/upload:/data/upload
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://engine:3004/health >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  gateway:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./docker-data/caddy:/data/caddy
+    depends_on:
+      - web
+      - engine

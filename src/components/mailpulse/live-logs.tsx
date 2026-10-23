@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Radio, Pause, Download, Eraser } from 'lucide-react'
+import { Radio, Pause, Download, Eraser } from './icons'
 import { logLevelMeta, formatClock } from './helpers'
 import type { LogEntry } from '@/lib/types'
 

@@ -9,7 +9,7 @@ import { toast } from 'sonner'
 import {
   Plus, Mail, Clock, CheckCircle2, AlertCircle, History,
   Sun, Moon, Search, Zap, ShieldCheck, BarChart3, Send,
-} from 'lucide-react'
+} from '@/components/mailpulse/icons'
 import { useTheme } from 'next-themes'
 import { api } from '@/lib/api'
 import { Wizard } from '@/components/mailpulse/wizard'
@@ -22,11 +22,22 @@ export default function Home() {
   const [mounted, setMounted] = useState(false)
   const [view, setView] = useState<'wizard' | 'session'>('wizard')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [wizardKey, setWizardKey] = useState(0)
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [loadingList, setLoadingList] = useState(true)
   const [filter, setFilter] = useState('')
+  const [health, setHealth] = useState<{ db: 'ok' | 'down'; engine: 'ok' | 'down' } | null>(null)
 
   useEffect(() => { setMounted(true) }, [])
+
+  // Stack health indicator — surfaces degraded services before the user hits them
+  useEffect(() => {
+    let alive = true
+    const tick = () => fetch('/api/health').then((r) => r.json()).then((h) => { if (alive) setHealth(h) }).catch(() => {})
+    tick()
+    const i = setInterval(tick, 12000)
+    return () => { alive = false; clearInterval(i) }
+  }, [selectedId])
 
   const loadSessions = useCallback(async () => {
     try {
@@ -48,6 +59,7 @@ export default function Home() {
 
   const newCampaign = () => {
     setSelectedId(null)
+    setWizardKey((k) => k + 1)
     setView('wizard')
   }
   const openSession = (id: string) => {
@@ -89,6 +101,13 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-2">
             <div className="hidden md:flex items-center gap-3 mr-2 text-xs text-muted-foreground">
+              <span
+                title={health ? `App: ok · Database: ${health.db} · Send engine: ${health.engine}` : 'Checking services…'}
+                className="inline-flex items-center gap-1 cursor-help"
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${!health ? 'bg-slate-300' : health.db === 'ok' && health.engine === 'ok' ? 'bg-emerald-500' : 'bg-amber-500'} ${health?.engine === 'ok' && health?.db === 'ok' ? '' : 'mp-pulse'}`} />
+                {health?.db !== 'ok' ? 'DB down' : health?.engine !== 'ok' ? 'Engine down' : 'All systems go'}
+              </span>
               <span className="inline-flex items-center gap-1"><Zap className="h-3.5 w-3.5 text-amber-500" /> {activeCount} active</span>
               <span className="inline-flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> {totalSent.toLocaleString()} sent</span>
               <span className="inline-flex items-center gap-1"><BarChart3 className="h-3.5 w-3.5 text-brand" /> {sessions.length} campaigns</span>
@@ -98,7 +117,7 @@ export default function Home() {
                 {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </Button>
             )}
-            <Button size="sm" className="bg-brand text-white hover:bg-emerald-700 hidden sm:inline-flex" onClick={newCampaign}>
+            <Button size="sm" className="bg-brand text-white hover:bg-blue-700 hidden sm:inline-flex" onClick={newCampaign}>
               <Plus className="h-4 w-4" /> New campaign
             </Button>
           </div>
@@ -107,10 +126,10 @@ export default function Home() {
 
       {/* Body */}
       <div className="flex flex-1 min-h-0">
-        {/* Sidebar */}
-        <aside className="w-72 shrink-0 border-r bg-background hidden lg:flex flex-col">
+        {/* Sidebar — fixed on scroll: stays visible while content moves */}
+        <aside className="w-72 shrink-0 border-r bg-background hidden lg:flex flex-col sticky top-14 self-start max-h-[calc(100vh-3.5rem-2.5rem)] min-h-[calc(100vh-3.5rem-2.5rem)]">
           <div className="p-3 space-y-3">
-            <Button className="w-full bg-brand text-white hover:bg-emerald-700" onClick={newCampaign}>
+            <Button className="w-full bg-brand text-white hover:bg-blue-700" onClick={newCampaign}>
               <Plus className="h-4 w-4" /> New campaign
             </Button>
             <div className="relative">
@@ -163,7 +182,7 @@ export default function Home() {
           </ScrollArea>
           <div className="p-3 border-t text-[10px] text-muted-foreground space-y-1">
             <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1"><ShieldCheck className="h-3 w-3" /> Credentials in-memory only</span>
+              <span className="inline-flex items-center gap-1"><ShieldCheck className="h-3 w-3" /> Passwords encrypted on this device</span>
             </div>
             <div className="flex items-center justify-between">
               <span>Total sent</span>
@@ -176,13 +195,14 @@ export default function Home() {
         <main className="flex-1 min-w-0 overflow-y-auto">
           <div className="p-4 sm:p-6 pb-36 lg:pb-12">
             {view === 'wizard' ? (
-              <Wizard onLaunched={onLaunched} onCancel={() => {}} />
+              <Wizard key={wizardKey} onLaunched={onLaunched} onCancel={newCampaign} />
             ) : selectedId ? (
               <SessionView
                 sessionId={selectedId}
                 onBack={() => { setView('wizard'); setSelectedId(null) }}
                 onDeleted={onDeleted}
                 onSessionUpdated={loadSessions}
+                onOpenSession={openSession}
               />
             ) : null}
           </div>

@@ -11,6 +11,25 @@ interface UseSessionSocketOptions {
   onCancelled?: (payload: { sessionId: string }) => void
 }
 
+/**
+ * Live log/progress socket with a candidate chain, so it works unchanged on
+ * localhost dev, in Docker behind the gateway, and through HTTPS tunnels:
+ *   1. same-origin `/engine/socket`  → gateway reverse-proxy → engine:3003
+ *   2. sandbox transform path        → the dev-runtime port proxy
+ * Each candidate gets a connect attempt; the first one that works is locked
+ * in for reconnects. If none connect, `connected` stays false and the session
+ * view's HTTP poll fallback keeps monitoring going.
+ */
+
+// How the browser reaches the send engine (order = preference). The first
+// uses the reverse-proxied same-origin route (any host, Docker, tunnels).
+// The second is the dev-runtime transform endpoint (replicates the exact
+// connection form known to work there — no explicit path override).
+const CONNECT_URLS: { path?: string; rawUrl?: string }[] = [
+  { path: '/engine/socket' },
+  { rawUrl: '/?XTransformPort=3003' },
+]
+
 export function useSessionSocket({ sessionId, onProgress, onCompleted, onCancelled }: UseSessionSocketOptions) {
   const [connected, setConnected] = useState(false)
   const [logs, setLogs] = useState<LogEntry[]>([])
@@ -42,43 +61,78 @@ export function useSessionSocket({ sessionId, onProgress, onCompleted, onCancell
   useEffect(() => {
     if (!sessionId) return
 
-    const socket = io('/?XTransformPort=3003', {
-      transports: ['websocket'],
-      reconnection: true,
-      reconnectionAttempts: 20,
-      reconnectionDelay: 1000,
-      timeout: 10000,
-      forceNew: true,
-    })
-    socketRef.current = socket
+    let disposed = false
+    let attemptTimer: any = null
+    let lockIndex: number | null = null
+    let current: Socket | null = null
 
-    socket.on('connect', () => {
-      setConnected(true)
-      socket.emit('subscribe', sessionId)
-    })
-    socket.on('disconnect', () => setConnected(false))
-    socket.on('connect_error', () => setConnected(false))
+    const clear = () => {
+      if (attemptTimer) { clearTimeout(attemptTimer); attemptTimer = null }
+      if (current) { current.disconnect(); current = null; socketRef.current = null }
+    }
 
-    socket.on('history', (history: LogEntry[]) => {
-      setLogs(history)
-    })
-    socket.on('log', (entry: LogEntry) => {
-      appendLog(entry)
-    })
-    socket.on('progress', (p: ProgressPayload) => {
-      callbacksRef.current.onProgress?.(p)
-    })
-    socket.on('completed', (payload: any) => {
-      callbacksRef.current.onCompleted?.(payload)
-    })
-    socket.on('cancelled', (payload: any) => {
-      callbacksRef.current.onCancelled?.(payload)
-    })
+    const attempt = (index: number) => {
+      if (disposed || !sessionId) return
+      const c = CONNECT_URLS[index]
+      const baseOpts = { transports: ['websocket'] as ['websocket'], reconnection: false, timeout: 6000, forceNew: true }
+      const s = c.rawUrl ? io(c.rawUrl, baseOpts) : io(c.path || '/engine/socket', baseOpts)
+      current = s
+      socketRef.current = s
+      let hadConnected = false
+
+      const failTimer = setTimeout(() => {
+        if (hadConnected || disposed) return
+        s.disconnect()
+        nextCandidate(index)
+      }, 7000)
+
+      s.on('connect', () => {
+        hadConnected = true
+        clearTimeout(failTimer)
+        lockIndex = index
+        setConnected(true)
+        s.emit('subscribe', sessionId)
+      })
+      s.on('connect_error', () => {
+        clearTimeout(failTimer)
+        setConnected(false)
+        if (!hadConnected) {
+          s.disconnect()
+          nextCandidate(index)
+        }
+      })
+      s.on('disconnect', () => {
+        setConnected(false)
+        // Reconnect on the endpoint that worked before (any transport hiccup)
+        if (!disposed && sessionId) {
+          attemptTimer = setTimeout(() => attempt(lockIndex ?? index), 1500)
+        }
+      })
+
+      s.on('history', (history: LogEntry[]) => setLogs(history))
+      s.on('log', (entry: LogEntry) => appendLog(entry))
+      s.on('progress', (p: ProgressPayload) => callbacksRef.current.onProgress?.(p))
+      s.on('completed', (payload: any) => callbacksRef.current.onCompleted?.(payload))
+      s.on('cancelled', (payload: any) => callbacksRef.current.onCancelled?.(payload))
+    }
+
+    const nextCandidate = (fromIndex: number) => {
+      if (disposed) return
+      const next = fromIndex + 1
+      if (next < CONNECT_URLS.length) {
+        attemptTimer = setTimeout(() => attempt(next), 400)
+      } else {
+        // All endpoints failed — wait and start over (engine may be restarting)
+        lockIndex = null
+        attemptTimer = setTimeout(() => attempt(0), 3000)
+      }
+    }
+
+    attempt(lockIndex ?? 0)
 
     return () => {
-      socket.emit('unsubscribe', sessionId)
-      socket.disconnect()
-      socketRef.current = null
+      disposed = true
+      clear()
       setConnected(false)
     }
   }, [sessionId, appendLog])

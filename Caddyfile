@@ -1,23 +1,16 @@
-:81 {
-	@transform_port_query {
-		query XTransformPort=*
-	}
+# Caddy gateway — single entry point on :8088
+#   /engine/socket/…  → send-engine socket.io (websocket reverse proxy)
+#   /*                → Next.js web app
+# Same-origin socket path also makes tunnels/LAN/proxies work unchanged.
 
-	handle @transform_port_query {
-		reverse_proxy localhost:{query.XTransformPort} {
-			header_up Host {host}
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-		}
+:8088 {
+	encode gzip
+
+	handle_path /engine/socket* {
+		reverse_proxy engine:3003
 	}
 
 	handle {
-		reverse_proxy localhost:3000 {
-			header_up Host {host}
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-		}
+		reverse_proxy web:3000
 	}
 }

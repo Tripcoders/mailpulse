@@ -5,7 +5,11 @@ import { randomUUID } from 'crypto'
 
 export const runtime = 'nodejs'
 
-const UPLOAD_DIR = '/home/z/my-project/upload'
+// Repo-local staging dir by default; configurable for Docker/production
+// (docker-compose mounts a shared volume and passes UPLOAD_DIR to both the
+// web app and the send engine so attachments survive restarts and work
+// across containers).
+export const UPLOAD_DIR = process.env.UPLOAD_DIR || join(process.cwd(), 'upload')
 
 // POST /api/attachments/upload  (FormData: field "file")
 // Stages an attachment on disk and returns its metadata. The file is linked to a

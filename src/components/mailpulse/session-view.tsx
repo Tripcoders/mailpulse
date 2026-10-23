@@ -12,24 +12,25 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { toast } from 'sonner'
 import {
   ArrowLeft, Pause, Play, XCircle, RefreshCw, Trash2, Mail, Paperclip,
-  CheckCircle2, XCircle as FailIcon, Clock, Send, Settings2, User, Calendar,
-  Server, Loader2, ExternalLink,
-} from 'lucide-react'
+  CheckCircle2, FailIcon, Clock, Send, Settings2, User, Calendar,
+  Server, Loader2, ExternalLink, Copy, RotateCcw,
+} from './icons'
 import { api } from '@/lib/api'
 import { useSessionSocket } from './use-session-socket'
 import { LiveLogs } from './live-logs'
 import { RecipientsTable } from './recipients-table'
 import { sessionStatusMeta, formatTime, formatBytes, duration } from './helpers'
-import type { SessionDetail, ProgressPayload, Attachment } from '@/lib/types'
+import type { SessionDetail, ProgressPayload, Attachment, LogEntry } from '@/lib/types'
 
 interface SessionViewProps {
   sessionId: string
   onBack: () => void
   onDeleted: () => void
   onSessionUpdated: () => void
+  onOpenSession: (id: string) => void
 }
 
-export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated }: SessionViewProps) {
+export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated, onOpenSession }: SessionViewProps) {
   const [session, setSession] = useState<SessionDetail | null>(null)
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [progress, setProgress] = useState<ProgressPayload | null>(null)
@@ -98,6 +99,28 @@ export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated }: 
     },
   })
 
+  // Backup channel: when the live socket feed can't connect (engine down,
+  // proxies, VPNs), poll the HTTP logs endpoint so monitoring never goes blind.
+  const [pollLogs, setPollLogs] = useState<LogEntry[]>([])
+  useEffect(() => {
+    if (connected) { setPollLogs([]); return }
+    let alive = true
+    const tick = async () => {
+      try {
+        const d = await api.get<{ logs: any[] }>(`/api/sessions/${sessionId}/logs?limit=300`)
+        if (alive) {
+          setPollLogs((d.logs || []).map((l: any) => ({
+            level: l.level, message: l.message, recipient: l.recipient, timestamp: typeof l.createdAt === 'string' ? l.createdAt : new Date(l.createdAt).toISOString(),
+          })))
+        }
+      } catch { /* engine fully down — retry next tick */ }
+    }
+    tick()
+    const i = setInterval(tick, 2500)
+    return () => { alive = false; clearInterval(i) }
+  }, [connected, sessionId])
+  const liveLogs = connected ? logs : (pollLogs.length >= logs.length ? pollLogs : logs)
+
   const act = async (fn: () => Promise<any>, label: string) => {
     setActing(label)
     try {
@@ -153,6 +176,35 @@ export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated }: 
     }
   }
 
+  const doDuplicate = async () => {
+    setActing('Duplicate')
+    try {
+      const { session: copy } = await api.duplicateSession(sessionId)
+      toast.success(`Duplicated as "${copy.name}"`)
+      onSessionUpdated()
+      onOpenSession(copy.id)
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to duplicate campaign')
+    } finally {
+      setActing(null)
+    }
+  }
+
+  const doReset = async () => {
+    if (!confirm('Reset this campaign to draft? All recipients will be re-queued and logs cleared. This cannot be undone.')) return
+    setActing('Reset')
+    try {
+      await api.resetSession(sessionId)
+      toast.success('Campaign reset to draft — ready for a fresh run')
+      loadSession()
+      onSessionUpdated()
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to reset campaign')
+    } finally {
+      setActing(null)
+    }
+  }
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -194,15 +246,23 @@ export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated }: 
             </Button>
           )}
           {hasFailed && !isActive && (
-            <Button size="sm" className="bg-brand text-white hover:bg-emerald-700" onClick={() => act(api.resendSession.bind(null, sessionId), 'Resend failed')} disabled={!!acting}>
+            <Button size="sm" className="bg-brand text-white hover:bg-blue-700" onClick={() => act(api.resendSession.bind(null, sessionId), 'Resend failed')} disabled={!!acting}>
               {acting === 'Resend failed' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Resend failed ({failed})
             </Button>
           )}
           {canRestart && (
-            <Button size="sm" className="bg-brand text-white hover:bg-emerald-700" onClick={() => setRestartOpen(true)}>
+            <Button size="sm" className="bg-brand text-white hover:bg-blue-700" onClick={() => setRestartOpen(true)}>
               <RefreshCw className="h-4 w-4" /> Restart with credentials
             </Button>
           )}
+          {!isActive && (
+            <Button variant="outline" size="sm" onClick={doReset} disabled={!!acting} title="Reset to draft — re-queue all recipients for a fresh run">
+              {acting === 'Reset' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Reset
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={doDuplicate} disabled={!!acting} title="Duplicate — reuse this campaign as a new draft">
+            {acting === 'Duplicate' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />} Duplicate
+          </Button>
           <Button variant="outline" size="sm" className="text-rose-600 hover:text-rose-700" onClick={async () => {
             if (!confirm('Delete this campaign and all its data? This cannot be undone.')) return
             await api.deleteSession(sessionId)
@@ -246,7 +306,7 @@ export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated }: 
       {/* Live logs + details */}
       <div className="grid lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
-          <LiveLogs logs={logs} connected={connected} live={isActive} onClear={clearLogs} />
+          <LiveLogs logs={liveLogs} connected={connected} live={isActive} onClear={clearLogs} />
         </div>
         <div className="space-y-4">
           <Card>
@@ -326,7 +386,7 @@ export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated }: 
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRestartOpen(false)} disabled={restarting}>Cancel</Button>
-            <Button onClick={doRestart} disabled={restarting} className="bg-brand text-white hover:bg-emerald-700">
+            <Button onClick={doRestart} disabled={restarting} className="bg-brand text-white hover:bg-blue-700">
               {restarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               {restarting ? 'Starting…' : 'Start sending'}
             </Button>

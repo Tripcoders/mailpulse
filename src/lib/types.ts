@@ -3,7 +3,7 @@
 export type SessionStatus =
   | 'draft' | 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled'
 
-export type ProviderType = 'gmail' | 'yahoo' | 'outlook' | 'smtp'
+export type ProviderType = 'gmail' | 'yahoo' | 'outlook' | 'icloud' | 'zoho' | 'sendgrid' | 'mailgun' | 'ses' | 'smtp'
 
 export type RecipientStatus = 'pending' | 'sending' | 'sent' | 'failed'
 
@@ -30,6 +30,15 @@ export interface StagedAttachment {
   filepath: string
   mimetype: string
   size: number
+}
+
+// Suggestion returned by the local smart-suggestions engine (/api/suggest).
+export interface Suggestion {
+  id: string
+  kind: 'profile' | 'provider' | 'content' | 'throttle'
+  title: string
+  detail: string
+  apply?: Record<string, any>
 }
 
 export interface SessionSummary {

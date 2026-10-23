@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.mini-services
+mini-services/*/node_modules
+docker-data
+db/*.db
+db/secret.key
+upload
+*.log
+.playwright
+test-results

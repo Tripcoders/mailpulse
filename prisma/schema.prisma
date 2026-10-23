@@ -49,6 +49,10 @@ model EmailSession {
 
   recipients    EmailRecipient[]
   attachments   Attachment[]
+  logs          SendLog[]
+
+  @@index([status])
+  @@index([createdAt])
 }
 
 model EmailRecipient {
@@ -66,7 +70,7 @@ model EmailRecipient {
   session       EmailSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId])
-  @@index([status])
+  @@index([sessionId, status])
 }
 
 model Attachment {
@@ -89,6 +93,8 @@ model Signature {
   type          String   // text | image
   content       String   // text content or base64 data URL
   createdAt     DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model EmailTemplate {
@@ -98,6 +104,8 @@ model EmailTemplate {
   body          String
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@index([createdAt])
 }
 
 model SendLog {
@@ -108,5 +116,47 @@ model SendLog {
   recipient     String?
   createdAt     DateTime @default(now())
 
+  session       EmailSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
   @@index([sessionId])
+  @@index([sessionId, createdAt])
+}
+
+// Key/value store for remembered preferences (last provider, throttle preset,
+// default profile id, …). Lets the wizard start already configured next time.
+model Setting {
+  key       String   @id
+  value     String // JSON payload
+  updatedAt DateTime @updatedAt
+}
+
+// Saved SMTP identity with the app password encrypted at rest (AES-256-GCM).
+// Passwords are only ever decrypted server-side at send time when launched with
+// the "send with saved password" option.
+model SmtpProfile {
+  id           String   @id @default(cuid())
+  name         String // human label, e.g. "Work — jane@gmail.com"
+  providerType String
+  fromName     String
+  fromEmail    String
+  smtpHost     String?
+  smtpPort     Int?
+  smtpSecure   Boolean  @default(false)
+  smtpUser     String
+  smtpPassEnc  String // encrypted app password
+  isDefault    Boolean  @default(false)
+  lastUsedAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  @@unique([smtpUser])
+  @@index([lastUsedAt])
+}
+
+// Auto-saved snapshot of the wizard (every field except the SMTP password).
+// Survives browser refreshes, dev-server restarts and full power failures so
+// the user can resume instead of starting from scratch.
+model WizardDraft {
+  id        String   @id @default("main")
+  content   String // JSON snapshot
+  updatedAt DateTime @updatedAt
 }
