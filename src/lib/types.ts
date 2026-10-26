@@ -44,6 +44,7 @@ export interface Suggestion {
 export interface SessionSummary {
   id: string
   name: string
+  color?: string
   status: SessionStatus
   totalEmails: number
   sentCount: number

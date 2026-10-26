@@ -3,14 +3,18 @@ import { db } from '@/lib/db'
 
 export const runtime = 'nodejs'
 
-// GET /api/sessions - list all sessions (most recent first)
-export async function GET() {
+// GET /api/sessions - list all sessions (most recent first), excluding soft-deleted
+export async function GET(req: NextRequest) {
+  const url = new URL(req.url)
+  const trash = url.searchParams.get('trash') === '1'
   const sessions = await db.emailSession.findMany({
+    where: trash ? { deletedAt: { not: null } } : { deletedAt: null },
     orderBy: { createdAt: 'desc' },
     select: {
-      id: true, name: true, status: true, totalEmails: true, sentCount: true,
+      id: true, name: true, color: true, status: true, totalEmails: true, sentCount: true,
       failedCount: true, pendingCount: true, fromName: true, fromEmail: true,
       providerType: true, subject: true, createdAt: true, startedAt: true, completedAt: true,
+      deletedAt: true,
     },
   })
   return NextResponse.json({ sessions })
@@ -21,7 +25,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const {
-      name, fromName, fromEmail,
+      name, color, fromName, fromEmail,
       providerType, smtpHost, smtpPort, smtpSecure,
       subject, bodyHtml, plainText,
       signatureText, signatureImage,
@@ -42,6 +46,7 @@ export async function POST(req: NextRequest) {
     const session = await db.emailSession.create({
       data: {
         name: name || `Session ${new Date().toLocaleString()}`,
+        color: color || '#3b82f6',
         fromName: fromName || fromEmail.split('@')[0],
         fromEmail,
         providerType: providerType || 'smtp',

@@ -23,13 +23,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   return NextResponse.json({ session, breakdown })
 }
 
-// DELETE /api/sessions/[id] - delete session + recipients + attachments + logs
+// DELETE /api/sessions/[id] - soft delete (move to trash)
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const attachments = await db.attachment.findMany({ where: { sessionId: id } })
-  for (const a of attachments) {
-    try { await rm(a.filepath, { force: true }) } catch {}
+  const url = new URL(req.url)
+  const permanent = url.searchParams.get('permanent') === '1'
+  if (permanent) {
+    const attachments = await db.attachment.findMany({ where: { sessionId: id } })
+    for (const a of attachments) {
+      try { await rm(a.filepath, { force: true }) } catch {}
+    }
+    await db.emailSession.delete({ where: { id } })
+    return NextResponse.json({ ok: true, permanent: true })
   }
-  await db.emailSession.delete({ where: { id } })
-  return NextResponse.json({ ok: true })
+  await db.emailSession.update({ where: { id }, data: { deletedAt: new Date() } })
+  return NextResponse.json({ ok: true, trashed: true })
 }

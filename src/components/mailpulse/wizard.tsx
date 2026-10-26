@@ -103,6 +103,7 @@ function ProviderLogo({ provider, size = 22 }: { provider: { value: string; labe
 export function Wizard({ onLaunched, onCancel }: WizardProps) {
   const [step, setStep] = useState(0)
   const [sessionName, setSessionName] = useState('')
+  const [sessionColor, setSessionColor] = useState('#3b82f6')
 
   // Step 1: CSV
   const [recipients, setRecipients] = useState<Recipient[]>([])
@@ -197,13 +198,13 @@ export function Wizard({ onLaunched, onCancel }: WizardProps) {
 
   // ── Snapshot of wizard state for autosave/suggestions (never includes the password) ──
   const snapshot = () => ({
-    sessionName, recipients, csvMeta,
+    sessionName, sessionColor, recipients, csvMeta,
     subject, bodyHtml, signatureText, signatureImage, attachments,
     fromName, fromEmail, providerType, smtpUser,
     batchSize, batchDelayMs, perEmailDelayMs,
     savedAt: new Date().toISOString(),
   })
-  const kafkaDeps = [sessionName, recipients, csvMeta, subject, bodyHtml, signatureText, signatureImage, attachments, fromName, fromEmail, providerType, smtpUser, batchSize, batchDelayMs, perEmailDelayMs]
+  const kafkaDeps = [sessionName, sessionColor, recipients, csvMeta, subject, bodyHtml, signatureText, signatureImage, attachments, fromName, fromEmail, providerType, smtpUser, batchSize, batchDelayMs, perEmailDelayMs]
 
   // ── Autosave: debounced 1.2s after any change, so a crash/power-cut never
   //    loses work. Runs after initial bootstrap: user edits win over the draft.
@@ -238,6 +239,7 @@ export function Wizard({ onLaunched, onCancel }: WizardProps) {
     const c = draftInfo.content
     try {
       if (c.sessionName) setSessionName(c.sessionName)
+      if (c.sessionColor) setSessionColor(c.sessionColor)
       if (Array.isArray(c.recipients)) setRecipients(c.recipients)
       if (c.csvMeta) setCsvMeta(c.csvMeta)
       setSubject(c.subject || '')
@@ -341,7 +343,8 @@ export function Wizard({ onLaunched, onCancel }: WizardProps) {
 
   // ── Demo data: fills every step so you can inspect + test all logic instantly ──
   const loadDemoData = () => {
-    setSessionName('Demo Campaign — November Newsletter')
+    setSessionName('Demo Campaign - November Newsletter')
+    setSessionColor('#8b5cf6')
     setRecipients(DEMO_RECIPIENTS)
     setCsvMeta({ totalRows: 3, duplicatesRemoved: 0, invalid: 0, detectedEmailColumn: 'email (demo)', detectedNameColumn: 'name (demo)', demo: true })
     setSubject(DEMO_SUBJECT)
@@ -356,6 +359,7 @@ export function Wizard({ onLaunched, onCancel }: WizardProps) {
 
   const resetAll = () => {
     setSessionName('')
+    setSessionColor('#3b82f6')
     setRecipients([])
     setCsvMeta(null)
     setSubject('')
@@ -585,6 +589,7 @@ export function Wizard({ onLaunched, onCancel }: WizardProps) {
     try {
       const { session } = await api.createSession({
         name: sessionName || `Campaign ${new Date().toLocaleDateString()}`,
+        color: sessionColor,
         fromName: fromName || fromEmail.split('@')[0],
         fromEmail,
         providerType,
@@ -859,6 +864,29 @@ export function Wizard({ onLaunched, onCancel }: WizardProps) {
                 <Label htmlFor="session-name">Campaign name (optional)</Label>
                 <Input id="session-name" value={sessionName} onChange={(e) => setSessionName(e.target.value)} placeholder="e.g. November Newsletter" className="mt-1" />
                 <p className="text-xs text-muted-foreground mt-1">Shown in history. If blank, the date is used.</p>
+              </div>
+              <div>
+                <Label>Campaign color (for identification)</Label>
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  {['#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#10b981', '#06b6d4', '#6366f1'].map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setSessionColor(c)}
+                      className={`h-7 w-7 rounded-full border-2 transition-all ${sessionColor === c ? 'border-foreground scale-110' : 'border-transparent hover:scale-105'}`}
+                      style={{ backgroundColor: c }}
+                      title={c}
+                    />
+                  ))}
+                  <input
+                    type="color"
+                    value={sessionColor}
+                    onChange={(e) => setSessionColor(e.target.value)}
+                    className="h-7 w-7 rounded-full border border-border cursor-pointer"
+                    title="Custom color"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Pick a color to identify this campaign in your history.</p>
               </div>
             </div>
           )}

@@ -26,6 +26,7 @@ export default function Home() {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [loadingList, setLoadingList] = useState(true)
   const [filter, setFilter] = useState('')
+  const [showTrash, setShowTrash] = useState(false)
   const [health, setHealth] = useState<{ db: 'ok' | 'down'; engine: 'ok' | 'down' } | null>(null)
 
   useEffect(() => { setMounted(true) }, [])
@@ -41,14 +42,14 @@ export default function Home() {
 
   const loadSessions = useCallback(async () => {
     try {
-      const data = await api.listSessions()
+      const data = await (showTrash ? api.listTrash() : api.listSessions())
       setSessions(data.sessions as SessionSummary[])
     } catch {
       // ignore
     } finally {
       setLoadingList(false)
     }
-  }, [])
+  }, [showTrash])
 
   useEffect(() => {
     loadSessions()
@@ -136,9 +137,17 @@ export default function Home() {
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Search campaigns…" className="h-8 pl-8 text-sm" />
             </div>
+            <div className="flex gap-1">
+              <Button variant={showTrash ? 'outline' : 'default'} size="sm" className="flex-1 h-7 text-xs" onClick={() => { setShowTrash(false); setLoadingList(true) }}>
+                Active
+              </Button>
+              <Button variant={showTrash ? 'default' : 'outline'} size="sm" className="flex-1 h-7 text-xs" onClick={() => { setShowTrash(true); setLoadingList(true) }}>
+                Trash
+              </Button>
+            </div>
           </div>
           <div className="px-3 pb-2 flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5"><History className="h-3.5 w-3.5" /> Campaign history</span>
+            <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5"><History className="h-3.5 w-3.5" /> {showTrash ? 'Trash' : 'Campaign history'}</span>
             <span className="text-[10px] text-muted-foreground">{filtered.length}</span>
           </div>
           <ScrollArea className="flex-1 px-2 pb-3">
@@ -155,15 +164,21 @@ export default function Home() {
                   const meta = sessionStatusMeta[s.status]
                   const isActive = s.status === 'running' || s.status === 'paused' || s.status === 'queued'
                   return (
-                    <button
+                    <div
                       key={s.id}
-                      onClick={() => openSession(s.id)}
                       className={`w-full text-left p-2.5 rounded-lg transition-colors border ${
                         selectedId === s.id ? 'bg-emerald-50/60 border-brand/40' : 'border-transparent hover:bg-muted/60'
                       }`}
                     >
+                      <button
+                        onClick={() => !showTrash && openSession(s.id)}
+                        className="w-full text-left"
+                      >
                       <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="text-sm font-medium truncate flex-1">{s.name}</span>
+                        <span className="text-sm font-medium truncate flex-1 flex items-center gap-1.5">
+                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color || '#3b82f6' }} />
+                          {s.name}
+                        </span>
                         <span className={`h-2 w-2 rounded-full shrink-0 ${meta.dot} ${isActive && s.status === 'running' ? 'mp-pulse' : ''}`} />
                       </div>
                       <p className="text-xs text-muted-foreground truncate mb-1.5">{s.subject || '(no subject)'}</p>
@@ -175,6 +190,17 @@ export default function Home() {
                       </div>
                       <p className="text-[10px] text-muted-foreground mt-1">{formatTime(s.createdAt)}</p>
                     </button>
+                    {showTrash && (
+                      <div className="flex gap-1 mt-2 px-1">
+                        <Button size="sm" variant="outline" className="h-6 text-[10px] flex-1" onClick={async (e) => { e.stopPropagation(); await api.restoreSession(s.id); loadSessions(); toast.success('Restored') }}>
+                          Restore
+                        </Button>
+                        <Button size="sm" variant="destructive" className="h-6 text-[10px] flex-1" onClick={async (e) => { e.stopPropagation(); if (confirm('Permanently delete?')) { await api.permanentDeleteSession(s.id); loadSessions(); toast.success('Permanently deleted') } }}>
+                          Delete forever
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                   )
                 })}
               </div>

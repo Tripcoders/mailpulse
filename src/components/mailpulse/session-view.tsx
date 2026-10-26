@@ -213,6 +213,7 @@ export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated, on
           <Button variant="ghost" size="sm" className="mt-1" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
+              <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: session.color || '#3b82f6' }} />
               <h1 className="text-xl font-semibold truncate">{session.name}</h1>
               <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${meta.color}`}>
                 {(isRunning || isPaused) && <span className={`h-1.5 w-1.5 rounded-full ${meta.dot} ${isRunning ? 'mp-pulse' : ''}`} />}

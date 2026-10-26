@@ -56,9 +56,12 @@ export const api = {
   },
   createSession: (payload: any) =>
     http<{ session: any }>('/api/sessions', { method: 'POST', body: JSON.stringify(payload) }),
-  listSessions: () => http<{ sessions: any[] }>('/api/sessions'),
+  listSessions: (trash?: boolean) => http<{ sessions: any[] }>(`/api/sessions${trash ? '?trash=1' : ''}`),
+  listTrash: () => http<{ sessions: any[] }>('/api/sessions?trash=1'),
   getSession: (id: string) => http<{ session: any; breakdown: any[] }>(`/api/sessions/${id}`),
   deleteSession: (id: string) => http<{ ok: boolean }>(`/api/sessions/${id}`, { method: 'DELETE' }),
+  permanentDeleteSession: (id: string) => http<{ ok: boolean }>(`/api/sessions/${id}?permanent=1`, { method: 'DELETE' }),
+  restoreSession: (id: string) => http<{ ok: boolean }>(`/api/sessions/${id}/restore`, { method: 'POST' }),
   startSession: (id: string, smtpUser: string, smtpPass: string) =>
     http<{ ok: boolean }>(`/api/sessions/${id}/start`, { method: 'POST', body: JSON.stringify({ smtpUser, smtpPass }) }),
   startSessionWithProfile: (id: string, profileId: string) =>

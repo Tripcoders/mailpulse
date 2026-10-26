@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/next"
+    }
+  ],
+  "env": {
+    "DATABASE_URL": "file:./db/custom.db",
+    "UPLOAD_DIR": "./upload",
+    "SECRET_KEY_PATH": "./db/secret.key",
+    "NODE_ENV": "production"
+  }
+}

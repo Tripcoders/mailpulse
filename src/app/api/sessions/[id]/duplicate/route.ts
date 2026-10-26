@@ -46,6 +46,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const copy = await db.emailSession.create({
       data: {
         name,
+        color: source.color,
         fromName: source.fromName,
         fromEmail: source.fromEmail,
         providerType: source.providerType,
