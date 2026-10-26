@@ -900,13 +900,15 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                       title={c}
                     />
                   ))}
-                  <input
-                    type="color"
-                    value={sessionColor}
-                    onChange={(e) => setSessionColor(e.target.value)}
-                    className="h-7 w-7 rounded-full border border-border cursor-pointer"
-                    title="Custom color"
-                  />
+                  <div className="relative h-7 w-7 rounded-full overflow-hidden border border-border cursor-pointer" style={{ background: 'conic-gradient(#ef4444, #f59e0b, #10b981, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444)' }}>
+                    <input
+                      type="color"
+                      value={sessionColor}
+                      onChange={(e) => setSessionColor(e.target.value)}
+                      className="absolute inset-0 h-full w-full opacity-0 cursor-pointer"
+                      title="Custom color"
+                    />
+                  </div>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Pick a color to identify this campaign in your history.</p>
               </div>
