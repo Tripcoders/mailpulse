@@ -47,6 +47,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       data: {
         name,
         color: source.color,
+        category: source.category,
         fromName: source.fromName,
         fromEmail: source.fromEmail,
         providerType: source.providerType,

@@ -100,10 +100,11 @@ function ProviderLogo({ provider, size = 22 }: { provider: { value: string; labe
   )
 }
 
-export function Wizard({ onLaunched, onCancel }: WizardProps) {
+export function Wizard({ onLaunched, onCancel, initialName, initialColor, initialCategory }: WizardProps & { initialName?: string; initialColor?: string; initialCategory?: string }) {
   const [step, setStep] = useState(0)
-  const [sessionName, setSessionName] = useState('')
-  const [sessionColor, setSessionColor] = useState('#3b82f6')
+  const [sessionName, setSessionName] = useState(initialName || '')
+  const [sessionColor, setSessionColor] = useState(initialColor || '#3b82f6')
+  const [sessionCategory, setSessionCategory] = useState(initialCategory || 'General')
 
   // Step 1: CSV
   const [recipients, setRecipients] = useState<Recipient[]>([])
@@ -198,13 +199,13 @@ export function Wizard({ onLaunched, onCancel }: WizardProps) {
 
   // ── Snapshot of wizard state for autosave/suggestions (never includes the password) ──
   const snapshot = () => ({
-    sessionName, sessionColor, recipients, csvMeta,
+    sessionName, sessionColor, sessionCategory, recipients, csvMeta,
     subject, bodyHtml, signatureText, signatureImage, attachments,
     fromName, fromEmail, providerType, smtpUser,
     batchSize, batchDelayMs, perEmailDelayMs,
     savedAt: new Date().toISOString(),
   })
-  const kafkaDeps = [sessionName, sessionColor, recipients, csvMeta, subject, bodyHtml, signatureText, signatureImage, attachments, fromName, fromEmail, providerType, smtpUser, batchSize, batchDelayMs, perEmailDelayMs]
+  const kafkaDeps = [sessionName, sessionColor, sessionCategory, recipients, csvMeta, subject, bodyHtml, signatureText, signatureImage, attachments, fromName, fromEmail, providerType, smtpUser, batchSize, batchDelayMs, perEmailDelayMs]
 
   // ── Autosave: debounced 1.2s after any change, so a crash/power-cut never
   //    loses work. Runs after initial bootstrap: user edits win over the draft.
@@ -240,6 +241,7 @@ export function Wizard({ onLaunched, onCancel }: WizardProps) {
     try {
       if (c.sessionName) setSessionName(c.sessionName)
       if (c.sessionColor) setSessionColor(c.sessionColor)
+      if (c.sessionCategory) setSessionCategory(c.sessionCategory)
       if (Array.isArray(c.recipients)) setRecipients(c.recipients)
       if (c.csvMeta) setCsvMeta(c.csvMeta)
       setSubject(c.subject || '')
@@ -345,6 +347,7 @@ export function Wizard({ onLaunched, onCancel }: WizardProps) {
   const loadDemoData = () => {
     setSessionName('Demo Campaign - November Newsletter')
     setSessionColor('#8b5cf6')
+    setSessionCategory('Newsletter')
     setRecipients(DEMO_RECIPIENTS)
     setCsvMeta({ totalRows: 3, duplicatesRemoved: 0, invalid: 0, detectedEmailColumn: 'email (demo)', detectedNameColumn: 'name (demo)', demo: true })
     setSubject(DEMO_SUBJECT)
@@ -360,6 +363,7 @@ export function Wizard({ onLaunched, onCancel }: WizardProps) {
   const resetAll = () => {
     setSessionName('')
     setSessionColor('#3b82f6')
+    setSessionCategory('General')
     setRecipients([])
     setCsvMeta(null)
     setSubject('')
@@ -590,6 +594,7 @@ export function Wizard({ onLaunched, onCancel }: WizardProps) {
       const { session } = await api.createSession({
         name: sessionName || `Campaign ${new Date().toLocaleDateString()}`,
         color: sessionColor,
+        category: sessionCategory,
         fromName: fromName || fromEmail.split('@')[0],
         fromEmail,
         providerType,
@@ -864,6 +869,23 @@ export function Wizard({ onLaunched, onCancel }: WizardProps) {
                 <Label htmlFor="session-name">Campaign name (optional)</Label>
                 <Input id="session-name" value={sessionName} onChange={(e) => setSessionName(e.target.value)} placeholder="e.g. November Newsletter" className="mt-1" />
                 <p className="text-xs text-muted-foreground mt-1">Shown in history. If blank, the date is used.</p>
+              </div>
+              <div>
+                <Label>Campaign category</Label>
+                <select
+                  value={sessionCategory}
+                  onChange={(e) => setSessionCategory(e.target.value)}
+                  className="mt-1 w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="General">General</option>
+                  <option value="Newsletter">Newsletter</option>
+                  <option value="Promotion">Promotion</option>
+                  <option value="Announcement">Announcement</option>
+                  <option value="Follow-up">Follow-up</option>
+                  <option value="Event">Event</option>
+                  <option value="Other">Other</option>
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">Categorize this campaign for easy filtering.</p>
               </div>
               <div>
                 <Label>Campaign color (for identification)</Label>

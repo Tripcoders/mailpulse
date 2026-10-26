@@ -1,10 +1,12 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import {
   Plus, Mail, Clock, CheckCircle2, AlertCircle, History,
@@ -23,6 +25,13 @@ export default function Home() {
   const [view, setView] = useState<'wizard' | 'session'>('wizard')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [wizardKey, setWizardKey] = useState(0)
+  const [campaignModalOpen, setCampaignModalOpen] = useState(false)
+  const [newCampaignName, setNewCampaignName] = useState('')
+  const [newCampaignColor, setNewCampaignColor] = useState('#3b82f6')
+  const [newCampaignCategory, setNewCampaignCategory] = useState('General')
+  const [wizardInitialName, setWizardInitialName] = useState('')
+  const [wizardInitialColor, setWizardInitialColor] = useState('#3b82f6')
+  const [wizardInitialCategory, setWizardInitialCategory] = useState('General')
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [loadingList, setLoadingList] = useState(true)
   const [filter, setFilter] = useState('')
@@ -59,9 +68,19 @@ export default function Home() {
   }, [loadSessions])
 
   const newCampaign = () => {
+    setNewCampaignName('')
+    setNewCampaignColor('#3b82f6')
+    setNewCampaignCategory('General')
+    setCampaignModalOpen(true)
+  }
+  const createCampaign = () => {
+    setWizardInitialName(newCampaignName)
+    setWizardInitialColor(newCampaignColor)
+    setWizardInitialCategory(newCampaignCategory)
     setSelectedId(null)
     setWizardKey((k) => k + 1)
     setView('wizard')
+    setCampaignModalOpen(false)
   }
   const openSession = (id: string) => {
     setSelectedId(id)
@@ -87,8 +106,9 @@ export default function Home() {
   const activeCount = sessions.filter((s) => s.status === 'running' || s.status === 'paused' || s.status === 'queued').length
 
   return (
-    <div className="min-h-screen flex flex-col bg-muted/20">
-      {/* Header */}
+    <>
+      <div className="min-h-screen flex flex-col bg-muted/20">
+        {/* Header */}
       <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur">
         <div className="flex items-center justify-between px-4 h-14">
           <div className="flex items-center gap-2.5">
@@ -184,6 +204,9 @@ export default function Home() {
                       <p className="text-xs text-muted-foreground truncate mb-1.5">{s.subject || '(no subject)'}</p>
                       <div className="flex items-center justify-between gap-2">
                         <span className={`text-[10px] px-1.5 py-0.5 rounded ${meta.color} border`}>{meta.label}</span>
+                        {s.category && s.category !== 'General' && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted border text-muted-foreground">{s.category}</span>
+                        )}
                         <span className="text-[10px] text-muted-foreground tabular-nums">
                           {s.sentCount}/{s.totalEmails} sent
                         </span>
@@ -221,7 +244,7 @@ export default function Home() {
         <main className="flex-1 min-w-0 overflow-y-auto">
           <div className="p-4 sm:p-6 pb-36 lg:pb-12">
             {view === 'wizard' ? (
-              <Wizard key={wizardKey} onLaunched={onLaunched} onCancel={newCampaign} />
+              <Wizard key={wizardKey} onLaunched={onLaunched} onCancel={newCampaign} initialName={wizardInitialName} initialColor={wizardInitialColor} initialCategory={wizardInitialCategory} />
             ) : selectedId ? (
               <SessionView
                 sessionId={selectedId}
@@ -267,5 +290,73 @@ export default function Home() {
         </div>
       )}
     </div>
-  )
+    <Dialog open={campaignModalOpen} onOpenChange={setCampaignModalOpen}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Create New Campaign</DialogTitle>
+          <DialogDescription>
+            Name, categorize, and color-code your campaign before you start building it.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div>
+            <Label htmlFor="new-campaign-name">Campaign name</Label>
+            <Input
+              id="new-campaign-name"
+              value={newCampaignName}
+              onChange={(e) => setNewCampaignName(e.target.value)}
+              placeholder="e.g. November Newsletter"
+              className="mt-1"
+              autoFocus
+            />
+          </div>
+          <div>
+            <Label>Campaign category</Label>
+            <select
+              value={newCampaignCategory}
+              onChange={(e) => setNewCampaignCategory(e.target.value)}
+              className="mt-1 w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="General">General</option>
+              <option value="Newsletter">Newsletter</option>
+              <option value="Promotion">Promotion</option>
+              <option value="Announcement">Announcement</option>
+              <option value="Follow-up">Follow-up</option>
+              <option value="Event">Event</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div>
+            <Label>Campaign color</Label>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              {['#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#10b981', '#06b6d4', '#6366f1'].map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setNewCampaignColor(c)}
+                  className={`h-7 w-7 rounded-full border-2 transition-all ${newCampaignColor === c ? 'border-foreground scale-110' : 'border-transparent hover:scale-105'}`}
+                  style={{ backgroundColor: c }}
+                  title={c}
+                />
+              ))}
+              <input
+                type="color"
+                value={newCampaignColor}
+                onChange={(e) => setNewCampaignColor(e.target.value)}
+                className="h-7 w-7 rounded-full border border-border cursor-pointer"
+                title="Custom color"
+              />
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setCampaignModalOpen(false)}>Cancel</Button>
+          <Button className="bg-brand text-white hover:bg-blue-700" onClick={createCampaign}>
+            Create & Continue
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </>
+)
 }

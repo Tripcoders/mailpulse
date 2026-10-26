@@ -45,6 +45,7 @@ export interface SessionSummary {
   id: string
   name: string
   color?: string
+  category?: string
   status: SessionStatus
   totalEmails: number
   sentCount: number

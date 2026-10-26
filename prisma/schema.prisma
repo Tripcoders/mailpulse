@@ -12,6 +12,7 @@ model EmailSession {
   id            String   @id @default(cuid())
   name          String
   color         String   @default("#3b82f6") // hex color for campaign identification
+  category      String   @default("General") // campaign category for organization
   status        String   @default("draft") // draft | queued | running | paused | completed | failed | cancelled
   totalEmails   Int      @default(0)
   sentCount     Int      @default(0)

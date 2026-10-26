@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
     where: trash ? { deletedAt: { not: null } } : { deletedAt: null },
     orderBy: { createdAt: 'desc' },
     select: {
-      id: true, name: true, color: true, status: true, totalEmails: true, sentCount: true,
+      id: true, name: true, color: true, category: true, status: true, totalEmails: true, sentCount: true,
       failedCount: true, pendingCount: true, fromName: true, fromEmail: true,
       providerType: true, subject: true, createdAt: true, startedAt: true, completedAt: true,
       deletedAt: true,
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const {
-      name, color, fromName, fromEmail,
+      name, color, category, fromName, fromEmail,
       providerType, smtpHost, smtpPort, smtpSecure,
       subject, bodyHtml, plainText,
       signatureText, signatureImage,
@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
       data: {
         name: name || `Session ${new Date().toLocaleString()}`,
         color: color || '#3b82f6',
+        category: category || 'General',
         fromName: fromName || fromEmail.split('@')[0],
         fromEmail,
         providerType: providerType || 'smtp',
