@@ -639,7 +639,7 @@ export function Wizard({ onLaunched, onCancel }: WizardProps) {
   const stepValid = [
     recipients.length > 0,
     subject.trim() !== '' && bodyHtml.trim() !== '',
-    true, // attachments optional — always "complete"
+    attachments.length > 0, // attachments optional — check only when files uploaded
     fromEmail.trim() !== '' && smtpUser.trim() !== '' && (smtpPass !== '' || canSendWithoutTyping) &&
       (providerType !== 'smtp' || (smtpHost.trim() !== '' && smtpPort.trim() !== '')),
     checks.every((c) => c.done || c.label === 'Attachments (optional)'),
