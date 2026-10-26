@@ -900,7 +900,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                       title={c}
                     />
                   ))}
-                  <div className="relative h-7 w-7 rounded-full overflow-hidden border border-border cursor-pointer" style={{ background: 'conic-gradient(#ef4444, #f59e0b, #10b981, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444)' }}>
+                  <div className="relative h-8 w-8 rounded-full overflow-hidden border border-border cursor-pointer" style={{ background: 'conic-gradient(from 0deg, #ff0000, #ff8000, #ffff00, #80ff00, #00ff00, #00ff80, #00ffff, #0080ff, #0000ff, #8000ff, #ff00ff, #ff0080, #ff0000)', filter: 'blur(1px)' }}>
                     <input
                       type="color"
                       value={sessionColor}
@@ -910,7 +910,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                     />
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Pick a color to identify this campaign in your history.</p>
+                <p className="text-xs text-muted-foreground mt-3">Pick a color to identify this campaign in your history.</p>
               </div>
             </div>
           )}
