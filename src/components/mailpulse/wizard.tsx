@@ -888,8 +888,8 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                 <p className="text-xs text-muted-foreground mt-1">Categorize this campaign for easy filtering.</p>
               </div>
               <div>
-                <Label>Campaign color (for identification)</Label>
-                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                <Label className="mt-2 block">Campaign color (for identification)</Label>
+                <div className="flex items-center gap-2 mt-3 flex-wrap">
                   {['#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#10b981', '#06b6d4', '#6366f1'].map((c) => (
                     <button
                       key={c}
@@ -900,7 +900,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                       title={c}
                     />
                   ))}
-                  <div className="relative h-8 w-8 rounded-full overflow-hidden border border-border cursor-pointer" style={{ background: 'conic-gradient(from 0deg, #ff0000, #ff8000, #ffff00, #80ff00, #00ff00, #00ff80, #00ffff, #0080ff, #0000ff, #8000ff, #ff00ff, #ff0080, #ff0000)', filter: 'blur(1px)' }}>
+                  <div className="relative h-8 w-8 rounded-full overflow-hidden border border-border cursor-pointer" style={{ background: 'linear-gradient(135deg, #7c3aed, #ec4899)', filter: 'blur(1px)' }}>
                     <input
                       type="color"
                       value={sessionColor}
