@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import {
   Plus, Mail, Clock, CheckCircle2, AlertCircle, History,
-  Sun, Moon, Search, Zap, ShieldCheck, BarChart3, Send,
+  Sun, Moon, Search, Zap, ShieldCheck, BarChart3, Send, ColorPicker,
 } from '@/components/mailpulse/icons'
 import { useTheme } from 'next-themes'
 import { api } from '@/lib/api'
@@ -340,6 +340,7 @@ export default function Home() {
                 />
               ))}
               <div className="relative h-8 w-8 rounded-full overflow-hidden border border-border cursor-pointer" style={{ background: 'linear-gradient(135deg, #7c3aed, #ec4899)', filter: 'blur(1px)' }}>
+                <ColorPicker className="absolute inset-0 m-auto h-4 w-4 text-white pointer-events-none z-10" />
                 <input
                   type="color"
                   value={newCampaignColor}

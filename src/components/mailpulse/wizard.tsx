@@ -16,7 +16,7 @@ import {
   Mail, PenLine, ImageIcon, CheckCircle2, AlertTriangle, Loader2,
   Save, FileText, ShieldCheck, Zap, Settings2, User, Link2, Bold, Italic,
   Eye, Sparkles, Download, RotateCcw, Trash2, CircleAlert, Info,
-  History, DuoTile,
+  History, DuoTile, ColorPicker,
 } from './icons'
 import { api } from '@/lib/api'
 import { formatBytes } from './helpers'
@@ -901,6 +901,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                     />
                   ))}
                   <div className="relative h-8 w-8 rounded-full overflow-hidden border border-border cursor-pointer" style={{ background: 'linear-gradient(135deg, #7c3aed, #ec4899)', filter: 'blur(1px)' }}>
+                    <ColorPicker className="absolute inset-0 m-auto h-4 w-4 text-white pointer-events-none z-10" />
                     <input
                       type="color"
                       value={sessionColor}

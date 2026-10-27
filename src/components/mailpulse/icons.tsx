@@ -14,6 +14,7 @@ import {
   IconSparkles, IconDownload, IconArrowBackUp, IconTrash, IconAlertCircle, IconInfoCircle,
   IconPlayerPause, IconPlayerPlay, IconCircleX, IconRefresh, IconClock, IconCalendar,
   IconServer, IconExternalLink, IconCopy, IconRadio, IconEraser, IconUsers, IconSearch,
+  IconColorPicker,
   IconChevronLeft, IconChevronRight, IconMailCheck, IconMailX, IconPlus, IconHistory,
   IconSun, IconMoon, IconChartBar, IconLoader,
 } from '@tabler/icons-react'
@@ -57,6 +58,7 @@ export const RefreshCw = IconRefresh
 export const Clock = IconClock
 export const Calendar = IconCalendar
 export const Server = IconServer
+export const ColorPicker = IconColorPicker
 export const ExternalLink = IconExternalLink
 export const Copy = IconCopy
 export const Radio = IconRadio
