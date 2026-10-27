@@ -456,9 +456,9 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
     try {
       const data = await api.uploadAttachment(file)
       setAttachments((prev) => [...prev, data])
-      toast.success(`Attached ${file.name}`)
+      toast.success(`✅ Attached: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`)
     } catch (e: any) {
-      toast.error(e.message || 'Upload failed')
+      toast.error(`❌ Upload failed: ${e.message || 'Unknown error'}`)
     } finally {
       setUploadingAtt(false)
     }
@@ -1121,8 +1121,8 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                 <div className="space-y-2">
                   <p className="text-xs font-medium text-muted-foreground">{attachments.length} file(s) staged — each will attach to every email</p>
                   {attachments.map((a) => (
-                    <div key={a.stagingId} className="flex items-center gap-3 border rounded-lg p-3">
-                      <div className="h-9 w-9 rounded bg-muted flex items-center justify-center"><FileText className="h-4 w-4 text-muted-foreground" /></div>
+                    <div key={a.stagingId} className="flex items-center gap-3 border rounded-lg p-3 bg-emerald-50/50 border-emerald-200">
+                      <div className="h-9 w-9 rounded bg-emerald-100 flex items-center justify-center"><CheckCircle2 className="h-4 w-4 text-emerald-600" /></div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{a.filename}</p>
                         <p className="text-xs text-muted-foreground">{formatBytes(a.size)} · {a.mimetype || 'file'}</p>

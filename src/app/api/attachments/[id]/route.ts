@@ -4,7 +4,7 @@ import { rm } from 'fs/promises'
 import { join } from 'path'
 
 // Mirrors the upload route: repo-local by default, UPLOAD_DIR in deployment.
-const UPLOAD_DIR = process.env.UPLOAD_DIR || join(process.cwd(), 'upload')
+const UPLOAD_DIR = process.env.UPLOAD_DIR || (process.env.VERCEL ? '/tmp/upload' : join(process.cwd(), 'upload'))
 
 export const runtime = 'nodejs'
 

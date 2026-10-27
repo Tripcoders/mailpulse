@@ -7,7 +7,7 @@ import { randomUUID } from 'crypto'
 export const runtime = 'nodejs'
 
 // Mirrors the upload route: repo-local by default, UPLOAD_DIR in deployment.
-const UPLOAD_DIR = process.env.UPLOAD_DIR || join(process.cwd(), 'upload')
+const UPLOAD_DIR = process.env.UPLOAD_DIR || (process.env.VERCEL ? '/tmp/upload' : join(process.cwd(), 'upload'))
 
 // POST /api/sessions/[id]/duplicate — reuse a campaign as a fresh draft.
 // Copies content, throttle config, recipients (reset to pending) and attachment
