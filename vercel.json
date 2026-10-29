@@ -7,9 +7,9 @@
     }
   ],
   "env": {
-    "DATABASE_URL": "file:./db/custom.db",
-    "UPLOAD_DIR": "./upload",
-    "SECRET_KEY_PATH": "./db/secret.key",
+    "DATABASE_URL": "file:/tmp/mailpulse.db",
+    "UPLOAD_DIR": "/tmp/upload",
+    "SECRET_KEY_PATH": "/tmp/secret.key",
     "NODE_ENV": "production"
   }
 }
