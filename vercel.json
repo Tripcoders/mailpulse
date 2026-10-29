@@ -1,10 +1,13 @@
 {
   "version": 2,
-  "buildCommand": "npx prisma generate && next build",
+  "buildCommand": "npx prisma generate --schema=prisma/schema.postgresql.prisma && next build",
   "env": {
-    "DATABASE_URL": "file:/tmp/mailpulse.db",
+    "DATABASE_URL": "postgresql://neondb_owner:npg_H7nmMw6DSgyx@ep-billowing-base-b5spy13r-pooler.c-7.us-east-2.aws.neon.tech/neondb?channel_binding=require&sslmode=require",
     "UPLOAD_DIR": "/tmp/upload",
     "SECRET_KEY_PATH": "/tmp/secret.key",
-    "NODE_ENV": "production"
+    "NODE_ENV": "production",
+    "ENGINE_URL": "https://chances-wonder-fri-issued.trycloudflare.com",
+    "ENGINE_CONTROL_URL": "https://chat-manufacturing-penetration-hardwood.trycloudflare.com",
+    "NEXT_PUBLIC_ENGINE_URL": "https://chances-wonder-fri-issued.trycloudflare.com"
   }
 }
