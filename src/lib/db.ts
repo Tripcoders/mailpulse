@@ -24,15 +24,44 @@ if (!existsSync(dbDir)) {
 }
 
 // Initialize the database schema if it doesn't exist
+// Try multiple approaches: local prisma binary, then node_modules prisma, then npx
 if (process.env.VERCEL && !existsSync(dbPath)) {
-  try {
-    execSync('npx prisma db push --skip-generate --accept-data-loss', {
-      env: { ...process.env, DATABASE_URL: dbUrl },
-      stdio: 'pipe',
-      timeout: 30000,
-    })
-  } catch (e: any) {
-    console.error('Failed to initialize database schema:', e?.message || e)
+  const approaches = [
+    () => {
+      const prismaBin = `${process.cwd()}/node_modules/.bin/prisma`
+      if (!existsSync(prismaBin)) throw new Error('prisma binary not found')
+      execSync(`"${prismaBin}" db push --skip-generate --accept-data-loss`, {
+        env: { ...process.env, DATABASE_URL: dbUrl },
+        stdio: 'pipe',
+        timeout: 60000,
+        cwd: process.cwd(),
+      })
+    },
+    () => {
+      const prismaJs = `${process.cwd()}/node_modules/prisma/build/index.js`
+      if (!existsSync(prismaJs)) throw new Error('prisma build not found')
+      execSync(`node "${prismaJs}" db push --skip-generate --accept-data-loss`, {
+        env: { ...process.env, DATABASE_URL: dbUrl },
+        stdio: 'pipe',
+        timeout: 60000,
+        cwd: process.cwd(),
+      })
+    },
+  ]
+
+  let initialized = false
+  for (const approach of approaches) {
+    try {
+      approach()
+      initialized = true
+      break
+    } catch (e: any) {
+      console.error('DB init attempt failed:', e?.stderr?.toString() || e?.message || e)
+    }
+  }
+
+  if (!initialized) {
+    console.error('All database initialization approaches failed. Database will not be available.')
   }
 }
 
