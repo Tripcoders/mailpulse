@@ -1,14 +1,14 @@
 import { PrismaClient } from '@prisma/client'
-import { execSync } from 'child_process'
-import { existsSync, mkdirSync } from 'fs'
-import { dirname } from 'path'
+import { existsSync, mkdirSync, copyFileSync } from 'fs'
+import { dirname, join } from 'path'
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
 // On Vercel's serverless platform, the filesystem is read-only except /tmp.
-const dbUrl = process.env.DATABASE_URL || (process.env.VERCEL ? 'file:/tmp/mailpulse.db' : 'file:./db/custom.db')
+const isVercel = !!process.env.VERCEL
+const dbUrl = process.env.DATABASE_URL || (isVercel ? 'file:/tmp/mailpulse.db' : 'file:./db/custom.db')
 
 // Extract the file path from the DATABASE_URL
 const dbPath = dbUrl.replace(/^file:/, '')
@@ -23,45 +23,18 @@ if (!existsSync(dbDir)) {
   }
 }
 
-// Initialize the database schema if it doesn't exist
-// Try multiple approaches: local prisma binary, then node_modules prisma, then npx
-if (process.env.VERCEL && !existsSync(dbPath)) {
-  const approaches = [
-    () => {
-      const prismaBin = `${process.cwd()}/node_modules/.bin/prisma`
-      if (!existsSync(prismaBin)) throw new Error('prisma binary not found')
-      execSync(`"${prismaBin}" db push --skip-generate --accept-data-loss`, {
-        env: { ...process.env, DATABASE_URL: dbUrl },
-        stdio: 'pipe',
-        timeout: 60000,
-        cwd: process.cwd(),
-      })
-    },
-    () => {
-      const prismaJs = `${process.cwd()}/node_modules/prisma/build/index.js`
-      if (!existsSync(prismaJs)) throw new Error('prisma build not found')
-      execSync(`node "${prismaJs}" db push --skip-generate --accept-data-loss`, {
-        env: { ...process.env, DATABASE_URL: dbUrl },
-        stdio: 'pipe',
-        timeout: 60000,
-        cwd: process.cwd(),
-      })
-    },
-  ]
-
-  let initialized = false
-  for (const approach of approaches) {
+// On Vercel, copy the bundled database (with schema) to /tmp if it doesn't exist
+if (isVercel && !existsSync(dbPath)) {
+  const bundledDb = join(process.cwd(), 'db', 'deploy.db')
+  if (existsSync(bundledDb)) {
     try {
-      approach()
-      initialized = true
-      break
+      copyFileSync(bundledDb, dbPath)
+      console.log('Copied bundled database to /tmp')
     } catch (e: any) {
-      console.error('DB init attempt failed:', e?.stderr?.toString() || e?.message || e)
+      console.error('Failed to copy bundled database:', e?.message || e)
     }
-  }
-
-  if (!initialized) {
-    console.error('All database initialization approaches failed. Database will not be available.')
+  } else {
+    console.error('Bundled database not found at:', bundledDb)
   }
 }
 
