@@ -1,162 +1,141 @@
-# MailPulse — Full Email Sending Infrastructure Setup
+# MailPulse — Full Email Sending Setup Guide
 
-## Overview
-MailPulse has two components:
-1. **Web App** (Next.js) — Runs on Vercel (or any Node.js host)
-2. **Send Engine** (Node.js) — Long-running process that sends emails via SMTP
+## Current Status
+- ✅ Vercel app is live: https://mailpulse-sand.vercel.app
+- ✅ Database (Neon PostgreSQL) is set up and working
+- ❌ Send Engine is NOT deployed (needs to be on Railway/Render)
+- ❌ Email sending requires the engine to be running
 
-For email sending to work, both must be running and connected to the same database.
+## The Problem
+The Send Engine is a long-running Node.js process (socket.io + HTTP control plane). Vercel's serverless platform can't run it. The engine must be deployed to a platform that supports long-running processes.
 
 ## Architecture
 ```
-┌─────────────┐     HTTP/WS      ┌──────────────┐     SMTP     ┌──────────┐
-│  Vercel App  │ ◄──────────────► │ Send Engine  │ ──────────► │  Gmail/   │
-│  (Next.js)   │                  │ (Railway/    │             │  SMTP     │
-│              │                  │  Render/Fly) │             │  Server   │
-└──────┬──────┘                  └──────┬───────┘             └──────────┘
-       │                                │
-       └────────┬───────────────────────┘
+┌──────────────┐  HTTP/WS  ┌──────────────┐  SMTP  ┌──────────┐
+│ Vercel App   │◄─────────►│ Send Engine  │───────►│ Gmail/   │
+│ (Next.js)    │           │ (Railway)    │        │ SMTP     │
+└──────┬───────┘           └──────┬───────┘        └──────────┘
+       │                          │
+       └────────┬─────────────────┘
                 │
          ┌──────┴──────┐
-         │  PostgreSQL  │
-         │  (Neon/      │
-         │  Supabase)   │
+         │  Neon DB    │  (already set up!)
          └─────────────┘
 ```
 
-## Step 1: Set Up Cloud Database (PostgreSQL)
+## Step 1: Deploy Send Engine to Railway (5 minutes)
 
-### Option A: Neon (Recommended - Free)
-1. Go to https://neon.tech
-2. Create account → Create project
-3. Copy the connection string (starts with `postgresql://`)
-4. Save it for later
-
-### Option B: Supabase (Free)
-1. Go to https://supabase.com
-2. Create account → Create project
-3. Go to Settings → Database → Connection string
-4. Copy the URI (starts with `postgresql://`)
-
-### Option C: Vercel Postgres
-1. Go to Vercel Dashboard → Storage → Create Database
-2. Select Postgres
-3. Copy the connection string
-
-## Step 2: Deploy Send Engine
-
-### Option A: Railway (Recommended - Free tier)
+### 1.1 Create Railway Account
 1. Go to https://railway.app
-2. Create account → New Project → Deploy from GitHub
-3. Select your repo → Set root directory to `/`
-4. Set Dockerfile path: `Dockerfile.engine`
-5. Add environment variables:
-   - `DATABASE_URL` = your PostgreSQL connection string
-   - `PORT` = 3003
-   - `CONTROL_PORT` = 3004
-   - `UPLOAD_DIR` = /tmp/upload
-6. Deploy
-7. Note the public URL (e.g., `https://mailpulse-engine.up.railway.app`)
+2. Click "Login" → "Login with GitHub"
+3. Authorize Railway to access your GitHub
 
-### Option B: Render (Free tier)
-1. Go to https://render.com
-2. Create account → New → Web Service
-3. Connect GitHub repo
-4. Set Dockerfile path: `Dockerfile.engine`
-5. Add environment variables (same as above)
-6. Deploy
-7. Note the public URL
+### 1.2 Create New Project
+1. Click "New Project"
+2. Select "Deploy from GitHub repo"
+3. Choose "Tripcoders/mailpulse"
+4. Railway will detect the Dockerfile
 
-### Option C: Fly.io
-1. Install flyctl: `curl -L https://fly.io/install.sh | sh`
-2. Run: `fly launch --dockerfile Dockerfile.engine`
-3. Set secrets: `fly secrets set DATABASE_URL=... PORT=3003 CONTROL_PORT=3004`
-4. Deploy: `fly deploy`
+### 1.3 Configure the Service
+1. Click on the service → "Settings"
+2. Set **Root Directory** to `/` (default)
+3. Set **Dockerfile Path** to `Dockerfile.engine`
+4. Set **Build Command** to: (leave empty, Dockerfile handles it)
 
-## Step 3: Configure Vercel App
-
-1. Go to Vercel Dashboard → Your Project → Settings → Environment Variables
-2. Update/Add these variables:
-   - `DATABASE_URL` = your PostgreSQL connection string (same as engine)
-   - `ENGINE_URL` = `https://your-engine-url:3003` (from Step 2)
-   - `ENGINE_CONTROL_URL` = `https://your-engine-url:3004` (from Step 2)
-   - `UPLOAD_DIR` = (remove or leave empty - not needed on Vercel)
-   - `SECRET_KEY_PATH` = (remove or leave empty - key is auto-generated)
-3. Redeploy: `vercel deploy --prod`
-
-## Step 4: Initialize Database Schema
-
-Run this once to create all tables:
-```bash
-# Set your DATABASE_URL
-export DATABASE_URL="postgresql://user:pass@host:5432/dbname"
-
-# Push schema
-npx prisma db push --schema=prisma/schema.postgresql.prisma --accept-data-loss
-```
-
-## Step 5: Test Email Sending
-
-1. Visit your Vercel app URL
-2. Create a campaign (name, recipients, subject, body)
-3. Configure SMTP (Gmail, Yahoo, or custom)
-4. Click "Launch"
-5. Watch real-time progress via socket.io
-6. Check the engine logs on Railway/Render for send status
-
-## Environment Variables Summary
-
-### Vercel (Web App)
+### 1.4 Add Environment Variables
+Click "Variables" tab → Add these:
 | Variable | Value |
 |----------|-------|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `ENGINE_URL` | `https://your-engine:3003` |
-| `ENGINE_CONTROL_URL` | `https://your-engine:3004` |
-| `NODE_ENV` | `production` |
-
-### Engine (Railway/Render/Fly)
-| Variable | Value |
-|----------|-------|
-| `DATABASE_URL` | Same PostgreSQL connection string |
+| `DATABASE_URL` | `postgresql://neondb_owner:npg_H7nmMw6DSgyx@ep-billowing-base-b5spy13r-pooler.c-7.us-east-2.aws.neon.tech/neondb?channel_binding=require&sslmode=require` |
 | `PORT` | `3003` |
 | `CONTROL_PORT` | `3004` |
 | `UPLOAD_DIR` | `/tmp/upload` |
 
-## Notes
-- The engine needs to be running for email sending to work
-- If the engine is down, the app still works for campaign creation/management
-- The health check on Vercel will show "engine: down" if the engine isn't reachable
-- For local development, use the Docker setup: `docker compose up -d`
-- For staging/testing without email sending, Vercel alone is sufficient
+### 1.5 Deploy
+1. Click "Deploy"
+2. Wait for build to complete (~2-3 minutes)
+3. Note the public URL (e.g., `https://mailpulse-engine-production.up.railway.app`)
 
-## Switching Between SQLite and PostgreSQL
+### 1.6 Verify Engine
+Visit: `https://your-engine-url/health`
+Should return: `{"ok":true,"uptime":...,"runtimeSessions":0}`
 
-For local development (SQLite):
+## Step 2: Configure Vercel (2 minutes)
+
+### 2.1 Update Environment Variables
+Go to Vercel Dashboard → Your Project → Settings → Environment Variables
+
+Update these (or add if missing):
+| Variable | Value |
+|----------|-------|
+| `DATABASE_URL` | (same Neon connection string as above) |
+| `ENGINE_URL` | `https://your-engine-url:3003` |
+| `ENGINE_CONTROL_URL` | `https://your-engine-url:3004` |
+| `NEXT_PUBLIC_ENGINE_URL` | `https://your-engine-url:3003` |
+
+### 2.2 Redeploy
 ```bash
-# Use the default schema
-npx prisma db push  # Uses prisma/schema.prisma (SQLite)
+vercel deploy --prod
 ```
 
-For cloud deployment (PostgreSQL):
+## Step 3: Test Email Sending
+
+1. Visit https://mailpulse-sand.vercel.app
+2. Check health indicator shows "All systems go" (green dot)
+3. Create a campaign:
+   - Name: "Test Campaign"
+   - Upload CSV with your email
+   - Compose subject + body
+   - Configure SMTP (Gmail/Yahoo/custom)
+4. Click "Launch"
+5. Watch real-time progress on the session page
+6. Check your inbox for the email!
+
+## Alternative: Render (Free Tier)
+
+If Railway doesn't work, try Render:
+
+1. Go to https://render.com → New → Web Service
+2. Connect GitHub repo
+3. Set Dockerfile path: `Dockerfile.engine`
+4. Add environment variables (same as above)
+5. Deploy (free tier may sleep after 15 min of inactivity)
+
+## Alternative: Run Locally (Already Works!)
+
+If you just want to test email sending now:
 ```bash
-# Use the PostgreSQL schema
-npx prisma db push --schema=prisma/schema.postgresql.prisma
+# Start the full stack
+docker compose up -d
+
+# Access at http://localhost:8088
+# Everything works including email sending!
 ```
 
 ## Troubleshooting
 
-### "Engine down" on health check
-- Verify the engine is running: `curl https://your-engine:3004/health`
+### "Engine down" on Vercel
+- Verify engine is running: `curl https://your-engine-url/health`
 - Check ENGINE_URL and ENGINE_CONTROL_URL env vars on Vercel
-- Ensure the engine's CORS allows your Vercel domain
+- Ensure the engine's CORS allows your Vercel domain (already set to `*`)
 
-### Database connection errors
-- Verify DATABASE_URL is correct
-- Ensure the database allows connections from Vercel's IP ranges
-- Check if the schema was pushed: `npx prisma db push`
+### "Session not found" error
+- Engine and app must use the SAME database (Neon PostgreSQL)
+- Verify DATABASE_URL is identical on both Vercel and engine
 
 ### Socket.io not connecting
-- The browser connects to ENGINE_URL for WebSocket
-- Ensure the engine's socket.io server is running
+- Browser connects to ENGINE_URL for WebSocket
+- Ensure the engine is accessible from the browser
 - Check browser console for connection errors
-- Verify CORS settings on the engine
+
+### Emails not sending
+- Verify SMTP credentials are correct
+- Check if your email provider blocks the server's IP
+- Look at engine logs on Railway/Render dashboard
+- Check the session logs in the app
+
+## Important Notes
+- The Neon database is temporary (expires Nov 1, 2026) - claim it at https://neon.tech
+- Quick tunnels (cloudflared) are NOT suitable for production - use Railway/Render
+- For local development, use the Docker setup which works completely
+- The Vercel deployment is best for UI/staging; email sending needs the engine

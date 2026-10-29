@@ -60,13 +60,15 @@ model EmailRecipient {
   name      String   @default("")
   status    String   @default("pending")
   error     String?
+  attemptCount Int   @default(0)
   sentAt    DateTime?
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   session   EmailSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId])
-  @@index([status])
+  @@index([sessionId, status])
 }
 
 model Attachment {
@@ -106,11 +108,13 @@ model SendLog {
   sessionId String
   level     String   @default("info")
   message   String   @db.Text
+  recipient String?
   createdAt DateTime @default(now())
 
   session   EmailSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId])
+  @@index([sessionId, createdAt])
 }
 
 model Setting {
@@ -123,6 +127,7 @@ model Setting {
 
 model SmtpProfile {
   id          String   @id @default(cuid())
+  name        String   @default("")
   fromName    String
   fromEmail   String
   providerType String
@@ -132,12 +137,13 @@ model SmtpProfile {
   smtpUser    String
   smtpPassEnc String
   isDefault   Boolean  @default(false)
+  lastUsedAt  DateTime @default(now())
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
 
 model WizardDraft {
-  id        String   @id @default(cuid())
+  id        String   @id @default("main")
   content   String   @db.Text
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
