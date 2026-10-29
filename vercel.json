@@ -6,8 +6,8 @@
     "UPLOAD_DIR": "/tmp/upload",
     "SECRET_KEY_PATH": "/tmp/secret.key",
     "NODE_ENV": "production",
-    "ENGINE_URL": "https://viking-gotten-oct-creation.trycloudflare.com",
-    "ENGINE_CONTROL_URL": "https://moves-moss-word-accountability.trycloudflare.com",
-    "NEXT_PUBLIC_ENGINE_URL": "https://viking-gotten-oct-creation.trycloudflare.com"
+    "ENGINE_URL": "https://rebates-allowance-remarkable-encyclopedia.trycloudflare.com",
+    "ENGINE_CONTROL_URL": "https://tricks-singing-declaration-assisted.trycloudflare.com",
+    "NEXT_PUBLIC_ENGINE_URL": "https://rebates-allowance-remarkable-encyclopedia.trycloudflare.com"
   }
 }

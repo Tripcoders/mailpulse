@@ -119,24 +119,39 @@ function buildTransporter(providerType: string, user: string, pass: string, smtp
   let host: string
   let port: number
   let secure: boolean
-  if (providerType === 'gmail') {
+
+  // Auto-detect provider from email domain if providerType is 'smtp' but host is missing
+  let resolvedType = providerType
+  if (providerType === 'smtp' && !smtpHost) {
+    const domain = user.split('@')[1]?.toLowerCase() || ''
+    if (domain.includes('gmail')) resolvedType = 'gmail'
+    else if (domain.includes('yahoo')) resolvedType = 'yahoo'
+    else if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('live')) resolvedType = 'outlook'
+    else if (domain.includes('icloud') || domain.includes('me.com')) resolvedType = 'icloud'
+    else if (domain.includes('zoho')) resolvedType = 'zoho'
+  }
+
+  if (resolvedType === 'gmail') {
     host = 'smtp.gmail.com'; port = 465; secure = true
-  } else if (providerType === 'yahoo') {
+  } else if (resolvedType === 'yahoo') {
     host = 'smtp.mail.yahoo.com'; port = 465; secure = true
-  } else if (providerType === 'outlook') {
+  } else if (resolvedType === 'outlook') {
     host = 'smtp.office365.com'; port = 587; secure = false
-  } else if (providerType === 'icloud') {
+  } else if (resolvedType === 'icloud') {
     host = 'smtp.mail.me.com'; port = 587; secure = false
-  } else if (providerType === 'zoho') {
+  } else if (resolvedType === 'zoho') {
     host = 'smtp.zoho.com'; port = 465; secure = true
-  } else if (providerType === 'sendgrid') {
+  } else if (resolvedType === 'sendgrid') {
     host = 'smtp.sendgrid.net'; port = 587; secure = false
-  } else if (providerType === 'mailgun') {
+  } else if (resolvedType === 'mailgun') {
     host = 'smtp.mailgun.org'; port = 587; secure = false
-  } else if (providerType === 'ses') {
+  } else if (resolvedType === 'ses') {
     host = 'email-smtp.us-east-1.amazonaws.com'; port = 587; secure = false
   } else {
-    host = smtpHost || 'smtp.example.com'
+    if (!smtpHost) {
+      throw new Error('SMTP host is required for custom SMTP provider. Please enter your SMTP server address (e.g., smtp.gmail.com).')
+    }
+    host = smtpHost
     port = smtpPort || 587
     secure = smtpSecure ?? false
   }

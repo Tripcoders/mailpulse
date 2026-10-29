@@ -29,6 +29,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'SMTP user and password (app password) are required' }, { status: 400 })
   }
 
+  if (session.providerType === 'smtp' && !session.smtpHost) {
+    return NextResponse.json({ error: 'SMTP host is required for custom SMTP. Please go back to Sender & SMTP and enter your SMTP server address (e.g., smtp.gmail.com).' }, { status: 400 })
+  }
+
   try {
     await startSession(id, smtpUser, smtpPass)
     return NextResponse.json({ ok: true, sessionId: id })
