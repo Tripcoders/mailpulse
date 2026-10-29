@@ -23,9 +23,11 @@ interface UseSessionSocketOptions {
 
 // How the browser reaches the send engine (order = preference). The first
 // uses the reverse-proxied same-origin route (any host, Docker, tunnels).
-// The second is the dev-runtime transform endpoint (replicates the exact
-// connection form known to work there — no explicit path override).
-const CONNECT_URLS: { path?: string; rawUrl?: string }[] = [
+// The second is the dev-runtime transform endpoint.
+// The third is a direct connection to an external engine (production).
+const EXTERNAL_ENGINE_URL = process.env.NEXT_PUBLIC_ENGINE_URL || ''
+const CONNECT_URLS: { path?: string; rawUrl?: string; direct?: boolean }[] = [
+  ...(EXTERNAL_ENGINE_URL ? [{ rawUrl: EXTERNAL_ENGINE_URL, direct: true }] : []),
   { path: '/engine/socket' },
   { rawUrl: '/?XTransformPort=3003' },
 ]
@@ -75,7 +77,15 @@ export function useSessionSocket({ sessionId, onProgress, onCompleted, onCancell
       if (disposed || !sessionId) return
       const c = CONNECT_URLS[index]
       const baseOpts = { transports: ['websocket'] as ['websocket'], reconnection: false, timeout: 6000, forceNew: true }
-      const s = c.rawUrl ? io(c.rawUrl, baseOpts) : io(c.path || '/engine/socket', baseOpts)
+      let s: Socket
+      if (c.direct) {
+        // Direct connection to external engine — use its full URL with default socket.io path
+        s = io(c.rawUrl!, baseOpts)
+      } else if (c.rawUrl) {
+        s = io(c.rawUrl, baseOpts)
+      } else {
+        s = io(c.path || '/engine/socket', baseOpts)
+      }
       current = s
       socketRef.current = s
       let hadConnected = false

@@ -1,0 +1,30 @@
+# ─────────────────────────────────────────────────────────────
+# MailPulse Send Engine — standalone deployment
+# Deploy this to Railway, Render, Fly.io, or any VPS
+# Build with: docker build -f Dockerfile.engine --build-arg SCHEMA=postgresql .
+# ─────────────────────────────────────────────────────────────
+FROM node:22-alpine AS base
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+
+ARG SCHEMA=sqlite
+FROM base AS build
+WORKDIR /engine
+COPY mini-services/email-sender/package.json mini-services/email-sender/package-lock.json* ./
+COPY mini-services/email-sender/index.ts ./
+COPY prisma/schema.${SCHEMA}.prisma ./schema.prisma
+RUN npm install --no-audit --no-fund \
+ && npx prisma@6.19.3 generate --schema=./schema.prisma \
+ && npx -y esbuild@0.28.2 index.ts --bundle --platform=node --format=cjs \
+    --external:nodemailer --external:@prisma/client \
+    --outfile=dist/index.js
+
+FROM base AS runtime
+ENV NODE_ENV=production
+WORKDIR /engine
+COPY --from=build /engine/node_modules ./node_modules
+COPY --from=build /engine/dist ./dist
+EXPOSE 3003 3004
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD wget -qO- http://localhost:3004/health || exit 1
+CMD ["node", "dist/index.js"]

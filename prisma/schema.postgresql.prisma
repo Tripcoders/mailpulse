@@ -1,0 +1,144 @@
+// MailPulse - Bulk Email Sender schema (PostgreSQL variant for cloud deployment)
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model EmailSession {
+  id            String   @id @default(cuid())
+  name          String
+  color         String   @default("#3b82f6")
+  category      String   @default("General")
+  status        String   @default("draft")
+  totalEmails   Int      @default(0)
+  sentCount     Int      @default(0)
+  failedCount   Int      @default(0)
+  pendingCount  Int      @default(0)
+
+  fromName      String
+  fromEmail     String
+
+  providerType  String
+  smtpHost      String?
+  smtpPort      Int?
+  smtpSecure    Boolean?
+
+  subject       String
+  bodyHtml      String   @db.Text
+  plainText     String?  @db.Text
+
+  signatureText String?  @db.Text
+  signatureImage String? @db.Text
+
+  batchSize     Int      @default(10)
+  batchDelayMs  Int      @default(2000)
+  perEmailDelayMs Int    @default(500)
+
+  startedAt     DateTime?
+  completedAt   DateTime?
+  deletedAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  recipients    EmailRecipient[]
+  attachments   Attachment[]
+  logs          SendLog[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([deletedAt])
+}
+
+model EmailRecipient {
+  id        String   @id @default(cuid())
+  sessionId String
+  email     String
+  name      String   @default("")
+  status    String   @default("pending")
+  error     String?
+  sentAt    DateTime?
+  createdAt DateTime @default(now())
+
+  session   EmailSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([status])
+}
+
+model Attachment {
+  id        String   @id @default(cuid())
+  sessionId String
+  filename  String
+  filepath  String
+  mimetype  String
+  size      Int
+  createdAt DateTime @default(now())
+
+  session   EmailSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+model Signature {
+  id        String   @id @default(cuid())
+  name      String
+  type      String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model EmailTemplate {
+  id        String   @id @default(cuid())
+  name      String
+  subject   String
+  body      String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model SendLog {
+  id        String   @id @default(cuid())
+  sessionId String
+  level     String   @default("info")
+  message   String   @db.Text
+  createdAt DateTime @default(now())
+
+  session   EmailSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model SmtpProfile {
+  id          String   @id @default(cuid())
+  fromName    String
+  fromEmail   String
+  providerType String
+  smtpHost    String?
+  smtpPort    Int?
+  smtpSecure  Boolean?
+  smtpUser    String
+  smtpPassEnc String
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model WizardDraft {
+  id        String   @id @default(cuid())
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
