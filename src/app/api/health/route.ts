@@ -1,35 +1,23 @@
 ﻿import { NextResponse } from 'next/server'
+import { db } from '@/lib/db'
 import { engineHealthy } from '@/lib/sender-client'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+// GET /api/health — liveness of the whole stack for the UI status dot and
+// for uptime monitors in production.
 export async function GET() {
   const checks: Record<string, any> = {
     app: 'ok',
   }
   try {
-    const { db } = await import('@/lib/db')
     await db.$queryRaw`SELECT 1`
     checks.db = 'ok'
-  } catch (e: any) {
-    checks.db = 'down: ' + (e?.message || 'unknown')
+  } catch {
+    checks.db = 'down (read-only FS on Vercel)'
   }
-  
-  // Test engine connection
-  let engineDetail = 'unknown'
-  try {
-    const controlUrl = process.env.ENGINE_CONTROL_URL || 'http://localhost:3004'
-    checks.controlUrl = controlUrl
-    const res = await fetch(`${controlUrl}/health`, { signal: AbortSignal.timeout(5000) })
-    checks.engineStatus = res.status
-    checks.engineBody = await res.text()
-    checks.engine = res.ok ? 'ok' : 'down'
-  } catch (e: any) {
-    checks.engine = 'down'
-    checks.engineError = e?.message || 'unknown'
-  }
-  
+  checks.engine = (await engineHealthy()) ? 'ok' : 'down'
   const hardDown = checks.db !== 'ok'
   return NextResponse.json(
     { ok: !hardDown, ...(checks) },

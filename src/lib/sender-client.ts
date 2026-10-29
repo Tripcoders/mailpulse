@@ -80,7 +80,7 @@ async function postEngine(path: string, payload?: any): Promise<any> {
 
 export async function engineHealthy(): Promise<boolean> {
   try {
-    const res = await fetch(`${CONTROL_URL}/health`, { signal: AbortSignal.timeout(2000) })
+    const res = await fetch(`${CONTROL_URL}/health`, { signal: AbortSignal.timeout(5000) })
     return res.ok
   } catch {
     return false
