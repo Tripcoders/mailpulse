@@ -1,12 +1,6 @@
 {
   "version": 2,
   "buildCommand": "npx prisma generate && next build",
-  "builds": [
-    {
-      "src": "package.json",
-      "use": "@vercel/next"
-    }
-  ],
   "env": {
     "DATABASE_URL": "file:/tmp/mailpulse.db",
     "UPLOAD_DIR": "/tmp/upload",
