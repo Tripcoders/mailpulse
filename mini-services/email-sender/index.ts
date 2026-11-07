@@ -222,8 +222,11 @@ function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)) }
 // ─────────────────────────────────────────────────────────────
 async function recoverOnBoot() {
   try {
-    await db.$queryRawUnsafe('PRAGMA journal_mode=WAL;')
-    await db.$queryRawUnsafe('PRAGMA busy_timeout=5000;')
+    // SQLite-specific pragmas (skip for PostgreSQL)
+    if (process.env.DATABASE_URL?.startsWith('file:')) {
+      await db.$queryRawUnsafe('PRAGMA journal_mode=WAL;')
+      await db.$queryRawUnsafe('PRAGMA busy_timeout=5000;')
+    }
   } catch { /* pragma failures are non-fatal */ }
 
   const reclaimed = await db.emailRecipient.updateMany({

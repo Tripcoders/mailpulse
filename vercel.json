@@ -6,8 +6,8 @@
     "UPLOAD_DIR": "/tmp/upload",
     "SECRET_KEY_PATH": "/tmp/secret.key",
     "NODE_ENV": "production",
-    "ENGINE_URL": "https://rebates-allowance-remarkable-encyclopedia.trycloudflare.com",
-    "ENGINE_CONTROL_URL": "https://tricks-singing-declaration-assisted.trycloudflare.com",
-    "NEXT_PUBLIC_ENGINE_URL": "https://rebates-allowance-remarkable-encyclopedia.trycloudflare.com"
+    "ENGINE_URL": "https://justin-imports-defining-motel.trycloudflare.com",
+    "ENGINE_CONTROL_URL": "https://drew-wool-environment-season.trycloudflare.com",
+    "NEXT_PUBLIC_ENGINE_URL": "https://justin-imports-defining-motel.trycloudflare.com"
   }
 }
