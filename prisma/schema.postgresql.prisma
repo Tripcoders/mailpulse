@@ -134,7 +134,7 @@ model SmtpProfile {
   smtpHost    String?
   smtpPort    Int?
   smtpSecure  Boolean?
-  smtpUser    String
+  smtpUser    String   @unique
   smtpPassEnc String
   isDefault   Boolean  @default(false)
   lastUsedAt  DateTime @default(now())
