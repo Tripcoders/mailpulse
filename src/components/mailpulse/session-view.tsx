@@ -291,7 +291,7 @@ export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated, on
           </div>
           <div className="h-3 rounded-full bg-muted overflow-hidden relative">
             <div
-              className={`h-full ${isRunning ? 'bg-emerald-500' : isPaused ? 'bg-amber-500' : status === 'completed' ? 'bg-emerald-600' : status === 'failed' ? 'bg-rose-500' : 'bg-slate-400'} ${isRunning ? 'mp-stripes' : ''} transition-all duration-300`}
+              className={`h-full ${isRunning ? 'bg-emerald-500' : isPaused ? 'bg-amber-500' : status === 'completed' ? 'bg-emerald-600' : status === 'failed' ? 'bg-rose-500' : 'bg-muted-foreground/40'} ${isRunning ? 'mp-stripes' : ''} transition-all duration-300`}
               style={{ width: `${pct}%` }}
             />
           </div>
@@ -350,7 +350,7 @@ export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated, on
               <Separator />
               <div className="p-4 bg-muted/30">
                 <p className="text-xs text-muted-foreground mb-2">Signature</p>
-                {session.signatureText && <div className="text-sm whitespace-pre-wrap text-slate-600">{session.signatureText}</div>}
+                {session.signatureText && <div className="text-sm whitespace-pre-wrap text-muted-foreground">{session.signatureText}</div>}
                 {session.signatureImage && <img src={session.signatureImage} alt="signature" className="max-h-20 mt-2" />}
               </div>
             </>
@@ -400,7 +400,7 @@ export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated, on
 
 function StatCard({ icon: Icon, label, value, tone }: { icon: any; label: string; value: number; tone: 'slate' | 'emerald' | 'rose' | 'amber' }) {
   const tones = {
-    slate: 'text-slate-700 bg-slate-50',
+    slate: 'text-muted-foreground bg-muted',
     emerald: 'text-emerald-700 bg-emerald-50',
     rose: 'text-rose-700 bg-rose-50',
     amber: 'text-amber-700 bg-amber-50',

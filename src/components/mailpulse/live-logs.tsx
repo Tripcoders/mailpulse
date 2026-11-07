@@ -47,9 +47,9 @@ export function LiveLogs({ logs, connected, live, onClear }: LiveLogsProps) {
   }
 
   return (
-    <Card className="flex flex-col h-full bg-slate-950 border-slate-800">
-      <CardHeader className="py-3 px-4 border-b border-slate-800 flex flex-row items-center justify-between space-y-0">
-        <CardTitle className="text-sm font-medium text-slate-200 flex items-center gap-2">
+    <Card className="flex flex-col h-full bg-card border-border">
+      <CardHeader className="py-3 px-4 border-b border-border flex flex-row items-center justify-between space-y-0">
+        <CardTitle className="text-sm font-medium text-foreground flex items-center gap-2">
           <Radio className="h-4 w-4 text-emerald-400" />
           Live Logs
           {live && (
@@ -63,7 +63,7 @@ export function LiveLogs({ logs, connected, live, onClear }: LiveLogsProps) {
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+            className="h-7 text-xs text-muted-foreground hover:text-foreground hover:bg-muted"
             onClick={onClear}
           >
             <Eraser className="h-3.5 w-3.5" /> Clear
@@ -71,7 +71,7 @@ export function LiveLogs({ logs, connected, live, onClear }: LiveLogsProps) {
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+            className="h-7 text-xs text-muted-foreground hover:text-foreground hover:bg-muted"
             onClick={downloadLogs}
             disabled={logs.length === 0}
           >
@@ -86,7 +86,7 @@ export function LiveLogs({ logs, connected, live, onClear }: LiveLogsProps) {
           className="h-full max-h-[60vh] lg:max-h-none overflow-y-auto scroll-thin font-mono text-xs leading-relaxed"
         >
           {logs.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-slate-600 gap-2 p-8">
+            <div className="h-full flex flex-col items-center justify-center text-muted-foreground gap-2 p-8">
               <Pause className="h-6 w-6" />
               <span>Waiting for activity…</span>
               {!connected && <span className="text-rose-500 text-[10px]">Reconnecting to log stream…</span>}
@@ -98,15 +98,15 @@ export function LiveLogs({ logs, connected, live, onClear }: LiveLogsProps) {
                 return (
                   <div
                     key={i}
-                    className="flex items-start gap-2 px-2 py-1 rounded hover:bg-slate-900/70"
+                    className="flex items-start gap-2 px-2 py-1 rounded hover:bg-muted/70"
                   >
-                    <span className="text-slate-600 shrink-0 select-none">{formatClock(l.timestamp)}</span>
+                    <span className="text-muted-foreground shrink-0 select-none">{formatClock(l.timestamp)}</span>
                     <span className={`shrink-0 w-4 text-center font-bold ${meta.color}`}>{meta.icon}</span>
-                    <span className="text-slate-600 shrink-0 select-none w-12">{meta.label}</span>
-                    <span className="text-slate-200 break-all">
+                    <span className="text-muted-foreground shrink-0 select-none w-12">{meta.label}</span>
+                    <span className="text-foreground break-all">
                       {l.message}
                       {l.recipient && (
-                        <span className="text-slate-500"> · {l.recipient}</span>
+                        <span className="text-muted-foreground/60"> · {l.recipient}</span>
                       )}
                     </span>
                   </div>

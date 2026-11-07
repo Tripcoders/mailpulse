@@ -146,13 +146,12 @@ model SmtpProfile {
   smtpHost     String?
   smtpPort     Int?
   smtpSecure   Boolean  @default(false)
-  smtpUser     String
+  smtpUser     String   @unique
   smtpPassEnc  String // encrypted app password
   isDefault    Boolean  @default(false)
   lastUsedAt   DateTime @default(now())
   createdAt    DateTime @default(now())
 
-  @@unique([smtpUser])
   @@index([lastUsedAt])
 }
 

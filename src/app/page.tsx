@@ -121,7 +121,7 @@ export default function Home() {
                 title={health ? `App: ok · Database: ${health.db} · Send engine: ${health.engine}` : 'Checking services…'}
                 className="inline-flex items-center gap-1 cursor-help"
               >
-                <span className={`h-1.5 w-1.5 rounded-full ${!health ? 'bg-slate-300' : health.db === 'ok' && health.engine === 'ok' ? 'bg-emerald-500' : 'bg-amber-500'} ${health?.engine === 'ok' && health?.db === 'ok' ? '' : 'mp-pulse'}`} />
+                <span className={`h-1.5 w-1.5 rounded-full ${!health ? 'bg-muted-foreground' : health.db === 'ok' && health.engine === 'ok' ? 'bg-emerald-500' : 'bg-amber-500'} ${health?.engine === 'ok' && health?.db === 'ok' ? '' : 'mp-pulse'}`} />
                 {health?.db !== 'ok' ? 'DB down' : health?.engine !== 'ok' ? 'Engine down' : 'All systems go'}
               </span>
               <span className="inline-flex items-center gap-1"><Zap className="h-3.5 w-3.5 text-amber-500" /> {activeCount} active</span>
@@ -182,7 +182,7 @@ export default function Home() {
                     <div
                       key={s.id}
                       className={`w-full text-left p-2.5 rounded-lg transition-colors border ${
-                        selectedId === s.id ? 'bg-emerald-50/60 border-brand/40' : 'border-transparent hover:bg-muted/60'
+                        selectedId === s.id ? 'bg-blue-500/10 border-brand/40' : 'border-transparent hover:bg-muted/60'
                       }`}
                     >
                       <button

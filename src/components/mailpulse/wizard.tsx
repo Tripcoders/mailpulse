@@ -700,7 +700,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
           )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <Button variant="outline" size="sm" className="h-7 text-xs bg-white" onClick={loadDemoData}>
+          <Button variant="outline" size="sm" className="h-7 text-xs bg-card" onClick={loadDemoData}>
             <Sparkles className="h-3.5 w-3.5" /> Load demo data
           </Button>
           <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={resetAll}>
@@ -998,7 +998,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                 </div>
                 <div>
                   <Label>Live preview <span className="text-xs text-muted-foreground font-normal">· as {samplePreview.recipient.email}</span></Label>
-                  <div className="mt-1 border rounded-lg overflow-hidden bg-white">
+                  <div className="mt-1 border rounded-lg overflow-hidden bg-card">
                     <div className="px-3 py-2 border-b bg-muted/40 text-xs">
                       <div className="font-medium truncate">Subject: {samplePreview.subject || <span className="text-muted-foreground italic">(no subject)</span>}</div>
                     </div>
@@ -1352,13 +1352,13 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                   </div>
                   <div className="space-y-2">
                     {suggestions.map((s) => (
-                      <div key={s.id} className="flex items-start gap-3 rounded-lg border border-blue-100 bg-white p-2.5">
+                      <div key={s.id} className="flex items-start gap-3 rounded-lg border border-blue-100 bg-card p-2.5">
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium">{s.title}</p>
                           <p className="text-xs text-muted-foreground mt-0.5">{s.detail}</p>
                         </div>
                         {s.apply && (
-                          <Button size="sm" variant="outline" className="h-7 text-xs shrink-0 bg-white" onClick={() => applySuggestion(s)}>Apply</Button>
+                          <Button size="sm" variant="outline" className="h-7 text-xs shrink-0 bg-card" onClick={() => applySuggestion(s)}>Apply</Button>
                         )}
                       </div>
                     ))}
@@ -1407,7 +1407,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
               </div>
               <div className="border rounded-lg overflow-hidden">
                 <div className="bg-muted/60 px-3 py-2 text-xs font-medium">Email preview</div>
-                <div className="p-3 text-sm max-h-52 overflow-y-auto scroll-thin bg-white" dangerouslySetInnerHTML={{ __html: samplePreview.body }} />
+                <div className="p-3 text-sm max-h-52 overflow-y-auto scroll-thin bg-card" dangerouslySetInnerHTML={{ __html: samplePreview.body }} />
               </div>
               {attachments.length > 0 && (
                 <div className="text-xs text-muted-foreground border rounded-lg p-3">
