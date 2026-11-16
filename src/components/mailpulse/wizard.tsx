@@ -16,8 +16,9 @@ import {
   Mail, PenLine, ImageIcon, CheckCircle2, AlertTriangle, Loader2,
   Save, FileText, ShieldCheck, Zap, Settings2, User, Link2, Bold, Italic,
   Eye, Sparkles, Download, RotateCcw, Trash2, CircleAlert, Info,
-  History, DuoTile, ColorPicker,
+  History, DuoTile, ColorPicker, Users,
 } from './icons'
+import { RecipientPicker } from './recipient-picker'
 import { api } from '@/lib/api'
 import { formatBytes } from './helpers'
 import type { Recipient, StagedAttachment, Signature, EmailTemplate, ProviderType, Suggestion } from '@/lib/types'
@@ -28,7 +29,7 @@ interface WizardProps {
 }
 
 const STEPS = [
-  { title: 'Upload CSV', icon: UploadCloud, hint: 'Recipient list (.csv)' },
+  { title: 'Recipients', icon: Users, hint: 'CSV, paste, or one by one' },
   { title: 'Compose', icon: PenLine, hint: 'Subject + body + signature' },
   { title: 'Attachments', icon: Paperclip, hint: 'Optional files' },
   { title: 'Sender & SMTP', icon: ShieldCheck, hint: 'From + provider + login' },
@@ -106,12 +107,13 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
   const [sessionColor, setSessionColor] = useState(initialColor || '#3b82f6')
   const [sessionCategory, setSessionCategory] = useState(initialCategory || 'General')
 
-  // Step 1: CSV
+  // Step 1: Recipients (CSV, bulk paste, or one by one)
   const [recipients, setRecipients] = useState<Recipient[]>([])
   const [csvMeta, setCsvMeta] = useState<any>(null)
   const [parsing, setParsing] = useState(false)
-  const [dragOver, setDragOver] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [recipientMode, setRecipientMode] = useState<'csv' | 'paste'>('csv')
+  const [recipientSource, setRecipientSource] = useState<'csv' | 'paste' | 'demo' | null>(null)
+  const [pasteText, setPasteText] = useState('')
 
   // Step 2: Compose
   const [subject, setSubject] = useState('')
@@ -200,12 +202,13 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
   // ── Snapshot of wizard state for autosave/suggestions (never includes the password) ──
   const snapshot = () => ({
     sessionName, sessionColor, sessionCategory, recipients, csvMeta,
+    recipientMode, recipientSource, pasteText,
     subject, bodyHtml, signatureText, signatureImage, attachments,
     fromName, fromEmail, providerType, smtpUser,
     batchSize, batchDelayMs, perEmailDelayMs,
     savedAt: new Date().toISOString(),
   })
-  const kafkaDeps = [sessionName, sessionColor, sessionCategory, recipients, csvMeta, subject, bodyHtml, signatureText, signatureImage, attachments, fromName, fromEmail, providerType, smtpUser, batchSize, batchDelayMs, perEmailDelayMs]
+  const kafkaDeps = [sessionName, sessionColor, sessionCategory, recipients, csvMeta, recipientMode, recipientSource, pasteText, subject, bodyHtml, signatureText, signatureImage, attachments, fromName, fromEmail, providerType, smtpUser, batchSize, batchDelayMs, perEmailDelayMs]
 
   // ── Autosave: debounced 1.2s after any change, so a crash/power-cut never
   //    loses work. Runs after initial bootstrap: user edits win over the draft.
@@ -244,6 +247,17 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
       if (c.sessionCategory) setSessionCategory(c.sessionCategory)
       if (Array.isArray(c.recipients)) setRecipients(c.recipients)
       if (c.csvMeta) setCsvMeta(c.csvMeta)
+      if (c.recipientMode === 'csv' || c.recipientMode === 'paste') {
+        setRecipientMode(c.recipientMode)
+      } else if (!c.csvMeta && Array.isArray(c.recipients) && c.recipients.length > 0) {
+        setRecipientMode('paste')
+      }
+      if (c.recipientSource === 'csv' || c.recipientSource === 'paste' || c.recipientSource === 'demo') {
+        setRecipientSource(c.recipientSource)
+      } else if (Array.isArray(c.recipients) && c.recipients.length > 0) {
+        setRecipientSource(c.csvMeta ? 'csv' : 'paste')
+      }
+      if (typeof c.pasteText === 'string') setPasteText(c.pasteText)
       setSubject(c.subject || '')
       setBodyHtml(c.bodyHtml || '')
       setSignatureText(c.signatureText || '')
@@ -350,6 +364,9 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
     setSessionCategory('Newsletter')
     setRecipients(DEMO_RECIPIENTS)
     setCsvMeta({ totalRows: 3, duplicatesRemoved: 0, invalid: 0, detectedEmailColumn: 'email (demo)', detectedNameColumn: 'name (demo)', demo: true })
+    setRecipientMode('csv')
+    setRecipientSource('demo')
+    setPasteText('')
     setSubject(DEMO_SUBJECT)
     setBodyHtml(DEMO_BODY)
     setFromName('Jane Sender')
@@ -366,6 +383,9 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
     setSessionCategory('General')
     setRecipients([])
     setCsvMeta(null)
+    setRecipientMode('csv')
+    setRecipientSource(null)
+    setPasteText('')
     setSubject('')
     setBodyHtml('')
     setSignatureText('')
@@ -412,27 +432,22 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
     setParsing(true)
     try {
       const data = await api.parseCsv(file)
+      if (data.recipients.length === 0) {
+        toast.error('No valid emails found in the CSV — your existing list was kept')
+        return
+      }
       setCsvMeta(data)
       setRecipients(data.recipients)
-      if (data.recipients.length === 0) {
-        toast.error('No valid emails found in the CSV')
-      } else {
-        toast.success(`Parsed ${data.recipients.length} valid recipient${data.recipients.length === 1 ? '' : 's'}`)
-        if (!sessionName) setSessionName(file.name.replace(/\.[^.]+$/, ''))
-      }
+      setRecipientSource('csv')
+      setRecipientMode('csv')
+      toast.success(`Parsed ${data.recipients.length} valid recipient${data.recipients.length === 1 ? '' : 's'}`)
+      if (!sessionName) setSessionName(file.name.replace(/\.[^.]+$/, ''))
     } catch (e: any) {
       toast.error(e.message || 'Failed to parse CSV')
     } finally {
       setParsing(false)
     }
   }, [sessionName])
-
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    setDragOver(false)
-    const file = e.dataTransfer.files?.[0]
-    if (file) handleCsvFile(file)
-  }
 
   // ── Signature image ──
   const onSigImage = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -579,7 +594,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
   // ── Launch ──
   const launch = async () => {
     const missing: string[] = []
-    if (recipients.length === 0) missing.push('recipients (Upload CSV)')
+    if (recipients.length === 0) missing.push('recipients (CSV or paste)')
     if (!subject.trim()) missing.push('subject (Compose)')
     if (!bodyHtml.trim()) missing.push('email body (Compose)')
     if (!fromEmail.trim()) missing.push('from email (Sender & SMTP)')
@@ -635,7 +650,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
 
   // Readiness checklist (powers Review tab + nav hints) — never blocks navigation
   const checks = [
-    { label: 'Recipients uploaded', done: recipients.length > 0, detail: recipients.length > 0 ? `${recipients.length} valid` : 'Go to Upload CSV', step: 0 },
+    { label: 'Recipients added', done: recipients.length > 0, detail: recipients.length > 0 ? `${recipients.length} valid` : 'Go to Recipients', step: 0 },
     { label: 'Subject line', done: subject.trim() !== '', detail: subject || 'Go to Compose', step: 1 },
     { label: 'Email body', done: bodyHtml.trim() !== '', detail: bodyHtml ? `${bodyHtml.length} chars` : 'Go to Compose', step: 1 },
     { label: 'Sender identity', done: fromEmail.trim() !== '', detail: fromEmail || 'Go to Sender & SMTP', step: 3 },
@@ -655,7 +670,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
     checks.every((c) => c.done || c.label === 'Attachments (optional)'),
   ]
   const stepHint: string[] = [
-    stepValid[0] ? 'Complete' : 'Needs a CSV upload',
+    stepValid[0] ? 'Complete' : 'Needs recipients (CSV or paste)',
     stepValid[1] ? 'Complete' : 'Needs subject + body',
     'Optional',
     stepValid[3] ? 'Complete' : 'Needs sender + SMTP login',
@@ -692,7 +707,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
         <Eye className="h-4 w-4 mt-0.5 shrink-0" />
         <div className="flex-1">
           <span className="font-semibold">Preview mode — nothing is locked.</span>{' '}
-          Click any step above to inspect every field, button and requirement before uploading anything.
+          Click any step above to inspect every field, button and requirement before adding recipients.
           {missingCount > 0 ? (
             <span> {missingCount} item{missingCount === 1 ? '' : 's'} still needed before launch (see Review).</span>
           ) : (
@@ -775,143 +790,77 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
       <div key={step} className={direction >= 0 ? 'mp-step-enter-right' : 'mp-step-enter-left'}>
       <Card>
         <CardContent className="p-6">
-          {/* STEP 1: UPLOAD CSV */}
+          {/* STEP 1: RECIPIENTS — CSV, bulk paste, or one-by-one */}
           {step === 0 && (
             <div className="space-y-5">
-              <div className="flex items-start justify-between flex-wrap gap-2">
+              <RecipientPicker
+                recipients={recipients}
+                csvMeta={csvMeta}
+                parsing={parsing}
+                mode={recipientMode}
+                source={recipientSource}
+                pasteText={pasteText}
+                onRecipientsChange={setRecipients}
+                onCsvMetaChange={setCsvMeta}
+                onCsvFile={handleCsvFile}
+                onModeChange={setRecipientMode}
+                onSourceChange={setRecipientSource}
+                onPasteTextChange={setPasteText}
+                onLoadDemo={loadDemoData}
+                onDownloadSample={downloadSampleCsv}
+              />
+
+              <div className="pt-4 border-t space-y-4">
                 <div>
-                  <h2 className="text-lg font-semibold flex items-center gap-2">
-                    <DuoTile icon={FileSpreadsheet} size="sm" /> Upload your recipient list
-                    <Badge variant="secondary" className="text-[10px]">Required</Badge>
-                  </h2>
-                  <p className="text-sm text-muted-foreground mt-1">Drag &amp; drop or browse for a CSV file. We&apos;ll auto-detect the email and name columns, validate addresses, and remove duplicates. Max 1,000 recipients.</p>
+                  <Label htmlFor="session-name">Campaign name (optional)</Label>
+                  <Input id="session-name" value={sessionName} onChange={(e) => setSessionName(e.target.value)} placeholder="e.g. November Newsletter" className="mt-1" />
+                  <p className="text-xs text-muted-foreground mt-1">Shown in history. If blank, the date is used.</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" className="h-8 text-xs" onClick={downloadSampleCsv}>
-                    <Download className="h-3.5 w-3.5" /> Sample CSV
-                  </Button>
-                  <Button variant="outline" size="sm" className="h-8 text-xs" onClick={loadDemoData}>
-                    <Sparkles className="h-3.5 w-3.5" /> Demo data
-                  </Button>
-                </div>
-              </div>
-
-              <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
-                <p className="font-medium text-foreground flex items-center gap-1.5"><Info className="h-3.5 w-3.5" /> What this step requires</p>
-                <ul className="list-disc pl-5 space-y-0.5">
-                  <li>A <code className="bg-muted px-1 rounded">.csv</code> file with a header row containing an <code className="bg-muted px-1 rounded">email</code> column (and optionally a <code className="bg-muted px-1 rounded">name</code> column).</li>
-                  <li>Example header: <code className="bg-muted px-1 rounded">email,name</code> — or download the sample CSV above.</li>
-                  <li>You can skip ahead and inspect Compose / Attachments / SMTP / Review right now — just click the steps above.</li>
-                </ul>
-              </div>
-
-              <div
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={onDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all ${
-                  dragOver ? 'border-brand bg-blue-50/50 scale-[1.01]' : 'border-border hover:border-brand/60 hover:bg-muted/40'
-                }`}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".csv,.txt,text/csv"
-                  className="hidden"
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCsvFile(f); e.currentTarget.value = '' }}
-                />
-                <div className="flex flex-col items-center gap-3">
-                  <div className="h-14 w-14 rounded-full bg-blue-50 flex items-center justify-center">
-                    {parsing ? <Loader2 className="h-7 w-7 text-brand animate-spin" /> : <UploadCloud className="h-7 w-7 text-brand" />}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label>Campaign category</Label>
+                    <select
+                      value={sessionCategory}
+                      onChange={(e) => setSessionCategory(e.target.value)}
+                      className="mt-1 w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="General">General</option>
+                      <option value="Newsletter">Newsletter</option>
+                      <option value="Promotion">Promotion</option>
+                      <option value="Announcement">Announcement</option>
+                      <option value="Follow-up">Follow-up</option>
+                      <option value="Event">Event</option>
+                      <option value="Other">Other</option>
+                    </select>
+                    <p className="text-xs text-muted-foreground mt-1">Categorize this campaign for easy filtering.</p>
                   </div>
                   <div>
-                    <p className="font-medium">{parsing ? 'Parsing your CSV…' : 'Drop your CSV here, or click to browse'}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Supports .csv with headers like email, name</p>
-                  </div>
-                </div>
-              </div>
-
-              {csvMeta && recipients.length > 0 && (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <Stat label="Valid recipients" value={recipients.length} tone="emerald" />
-                    <Stat label="Total rows" value={csvMeta.totalRows} />
-                    <Stat label="Duplicates removed" value={csvMeta.duplicatesRemoved ?? 0} tone="amber" />
-                    <Stat label="Invalid emails" value={csvMeta.invalid ?? 0} tone="rose" />
-                  </div>
-                  <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
-                    <span>Email column: <code className="bg-muted px-1.5 py-0.5 rounded">{csvMeta.detectedEmailColumn}</code></span>
-                    {csvMeta.detectedNameColumn && <span>Name column: <code className="bg-muted px-1.5 py-0.5 rounded">{csvMeta.detectedNameColumn}</code></span>}
-                  </div>
-                  <div className="border rounded-lg overflow-hidden">
-                    <div className="bg-muted/60 px-3 py-2 text-xs font-medium text-muted-foreground flex items-center justify-between">
-                      <span>Preview · first {Math.min(8, recipients.length)} of {recipients.length}</span>
-                      <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => { setRecipients([]); setCsvMeta(null); toast.info('Recipient list removed') }}>Remove list</Button>
+                    <Label className="block">Campaign color (for identification)</Label>
+                    <div className="flex items-center gap-2 mt-3 flex-wrap">
+                      {['#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#10b981', '#06b6d4', '#6366f1'].map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => setSessionColor(c)}
+                          className={`h-7 w-7 rounded-full border-2 transition-all ${sessionColor === c ? 'border-foreground scale-110' : 'border-transparent hover:scale-105'}`}
+                          style={{ backgroundColor: c }}
+                          title={c}
+                        />
+                      ))}
+                      <div className="relative h-8 w-8 rounded-full overflow-hidden border border-border cursor-pointer" style={{ background: 'linear-gradient(135deg, #7c3aed, #ec4899)', filter: 'blur(1px)' }}>
+                        <ColorPicker className="absolute inset-0 m-auto h-4 w-4 text-white pointer-events-none z-10" />
+                        <input
+                          type="color"
+                          value={sessionColor}
+                          onChange={(e) => setSessionColor(e.target.value)}
+                          className="absolute inset-0 h-full w-full opacity-0 cursor-pointer"
+                          title="Custom color"
+                        />
+                      </div>
                     </div>
-                    <div className="max-h-56 overflow-y-auto scroll-thin">
-                      <table className="w-full text-sm">
-                        <tbody>
-                          {recipients.slice(0, 8).map((r, i) => (
-                            <tr key={i} className="border-t">
-                              <td className="px-3 py-1.5 font-medium">{r.name || <span className="text-muted-foreground italic">—</span>}</td>
-                              <td className="px-3 py-1.5 text-muted-foreground">{r.email}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <p className="text-xs text-muted-foreground mt-3">Pick a color to identify this campaign in your history.</p>
                   </div>
                 </div>
-              )}
-
-              <div>
-                <Label htmlFor="session-name">Campaign name (optional)</Label>
-                <Input id="session-name" value={sessionName} onChange={(e) => setSessionName(e.target.value)} placeholder="e.g. November Newsletter" className="mt-1" />
-                <p className="text-xs text-muted-foreground mt-1">Shown in history. If blank, the date is used.</p>
-              </div>
-              <div>
-                <Label>Campaign category</Label>
-                <select
-                  value={sessionCategory}
-                  onChange={(e) => setSessionCategory(e.target.value)}
-                  className="mt-1 w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="General">General</option>
-                  <option value="Newsletter">Newsletter</option>
-                  <option value="Promotion">Promotion</option>
-                  <option value="Announcement">Announcement</option>
-                  <option value="Follow-up">Follow-up</option>
-                  <option value="Event">Event</option>
-                  <option value="Other">Other</option>
-                </select>
-                <p className="text-xs text-muted-foreground mt-1">Categorize this campaign for easy filtering.</p>
-              </div>
-              <div>
-                <Label className="mt-2 block">Campaign color (for identification)</Label>
-                <div className="flex items-center gap-2 mt-3 flex-wrap">
-                  {['#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#f59e0b', '#10b981', '#06b6d4', '#6366f1'].map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => setSessionColor(c)}
-                      className={`h-7 w-7 rounded-full border-2 transition-all ${sessionColor === c ? 'border-foreground scale-110' : 'border-transparent hover:scale-105'}`}
-                      style={{ backgroundColor: c }}
-                      title={c}
-                    />
-                  ))}
-                  <div className="relative h-8 w-8 rounded-full overflow-hidden border border-border cursor-pointer" style={{ background: 'linear-gradient(135deg, #7c3aed, #ec4899)', filter: 'blur(1px)' }}>
-                    <ColorPicker className="absolute inset-0 m-auto h-4 w-4 text-white pointer-events-none z-10" />
-                    <input
-                      type="color"
-                      value={sessionColor}
-                      onChange={(e) => setSessionColor(e.target.value)}
-                      className="absolute inset-0 h-full w-full opacity-0 cursor-pointer"
-                      title="Custom color"
-                    />
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground mt-3">Pick a color to identify this campaign in your history.</p>
               </div>
             </div>
           )}
@@ -1487,16 +1436,6 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  )
-}
-
-function Stat({ label, value, tone }: { label: string; value: number; tone?: 'emerald' | 'amber' | 'rose' }) {
-  const toneClass = tone === 'emerald' ? 'text-emerald-700 bg-emerald-50' : tone === 'amber' ? 'text-amber-700 bg-amber-50' : tone === 'rose' ? 'text-rose-700 bg-rose-50' : 'text-foreground bg-muted'
-  return (
-    <div className={`rounded-lg p-3 ${toneClass}`}>
-      <p className="text-2xl font-bold tabular-nums">{value}</p>
-      <p className="text-xs opacity-80">{label}</p>
     </div>
   )
 }

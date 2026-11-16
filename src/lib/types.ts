@@ -12,6 +12,8 @@ export type LogLevel = 'info' | 'success' | 'warn' | 'error'
 export interface Recipient {
   email: string
   name: string
+  /** Optional display-only company (pasted lists can include one; the API stores email + name). */
+  company?: string
 }
 
 export interface ParsedCsv {
