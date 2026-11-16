@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { toast } from 'sonner'
 import {
   Plus, Mail, Clock, CheckCircle2, AlertCircle, History,
@@ -34,6 +35,7 @@ export default function Home() {
   const [wizardInitialCategory, setWizardInitialCategory] = useState('General')
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [loadingList, setLoadingList] = useState(true)
+  const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false)
   const [filter, setFilter] = useState('')
   const [showTrash, setShowTrash] = useState(false)
   const [health, setHealth] = useState<{ db: 'ok' | 'down'; engine: 'ok' | 'down' } | null>(null)
@@ -115,8 +117,8 @@ export default function Home() {
               <img src="/logo.svg" alt="Mail Pulse" className="h-8 w-auto" />
               <h1 className="font-semibold text-base">Mail Pulse</h1>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="hidden md:flex items-center gap-3 mr-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <div className="hidden lg:flex items-center gap-3 mr-2 text-xs text-muted-foreground">
               <span
                 title={health ? `App: ok · Database: ${health.db} · Send engine: ${health.engine}` : 'Checking services…'}
                 className="inline-flex items-center gap-1 cursor-help"
@@ -128,6 +130,91 @@ export default function Home() {
               <span className="inline-flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> {totalSent.toLocaleString()} sent</span>
               <span className="inline-flex items-center gap-1"><BarChart3 className="h-3.5 w-3.5 text-brand" /> {sessions.length} campaigns</span>
             </div>
+            <Sheet open={mobileHistoryOpen} onOpenChange={setMobileHistoryOpen}>
+              <SheetTrigger asChild>
+                <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5 px-2.5 lg:hidden" aria-label={`Open ${showTrash ? 'campaign trash' : 'recent campaigns'}, ${sessions.length} total`}>
+                  <History className="h-4 w-4" />
+                  <span className="hidden min-[400px]:inline">{showTrash ? 'Trash' : 'Recent'}</span>
+                  <Badge variant="secondary" className="h-5 min-w-5 justify-center px-1 text-[10px] tabular-nums">{sessions.length}</Badge>
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="top" className="top-14 h-[80dvh] max-h-[calc(100dvh-3.5rem)] gap-0 overflow-hidden rounded-b-2xl border-x-0 border-t-0 p-0 lg:hidden">
+                <SheetHeader className="shrink-0 border-b px-4 py-3 pr-14">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <SheetTitle className="text-sm">Recent campaigns</SheetTitle>
+                      <SheetDescription className="text-xs">Search your full history, open a campaign, or manage items in Trash.</SheetDescription>
+                    </div>
+                    <span className="mt-0.5 shrink-0 text-xs text-muted-foreground">{filtered.length} shown</span>
+                  </div>
+                </SheetHeader>
+                <div className="shrink-0 space-y-2 border-b p-3">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={showTrash ? 'Search trash…' : 'Search campaigns…'} className="h-9 pl-9 text-sm" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button type="button" variant={showTrash ? 'outline' : 'default'} size="sm" className="h-8 text-xs" aria-pressed={!showTrash} onClick={() => { if (showTrash) { setShowTrash(false); setLoadingList(true) } }}>
+                      Active
+                    </Button>
+                    <Button type="button" variant={showTrash ? 'default' : 'outline'} size="sm" className="h-8 text-xs" aria-pressed={showTrash} onClick={() => { if (!showTrash) { setShowTrash(true); setLoadingList(true) } }}>
+                      Trash
+                    </Button>
+                  </div>
+                </div>
+                <ScrollArea className="min-h-0 flex-1 p-3">
+                  {loadingList ? (
+                    <div className="p-6 text-center text-sm text-muted-foreground">Loading campaigns…</div>
+                  ) : filtered.length === 0 ? (
+                    <div className="p-6 text-center text-sm text-muted-foreground">
+                      <Mail className="mx-auto mb-2 h-8 w-8 opacity-30" />
+                      {sessions.length === 0 ? (showTrash ? 'Trash is empty.' : 'No campaigns yet.') : 'No campaigns match your search.'}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {filtered.map((s) => {
+                        const meta = sessionStatusMeta[s.status]
+                        const isActive = s.status === 'running' || s.status === 'paused' || s.status === 'queued'
+                        return (
+                          <div key={s.id} className={`rounded-xl border p-3 transition-colors ${selectedId === s.id ? 'border-brand/40 bg-blue-500/10' : 'border-border bg-background hover:bg-muted/40'}`}>
+                            <div className="flex items-start gap-3">
+                              <button type="button" onClick={() => { if (!showTrash) { setMobileHistoryOpen(false); openSession(s.id) } }} disabled={showTrash} aria-label={`Open campaign ${s.name}`} className="min-w-0 flex-1 text-left disabled:cursor-default">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: s.color || '#3b82f6' }} />
+                                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{s.name}</span>
+                                  <span className={`h-2 w-2 shrink-0 rounded-full ${meta.dot} ${isActive && s.status === 'running' ? 'mp-pulse' : ''}`} />
+                                  <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] ${meta.color}`}>{meta.label}</span>
+                                </div>
+                                <p className="mt-1 truncate text-xs text-muted-foreground">{s.subject || '(no subject)'}</p>
+                                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+                                  <span>{s.category || 'General'}</span>
+                                  <span className="tabular-nums">{s.sentCount.toLocaleString()} / {s.totalEmails.toLocaleString()} sent</span>
+                                  <span>{formatTime(s.createdAt)}</span>
+                                </div>
+                              </button>
+                              {showTrash && (
+                                <div className="flex shrink-0 flex-col gap-1">
+                                  <Button type="button" size="sm" variant="outline" className="h-8 px-2 text-[10px]" onClick={async () => { try { await api.restoreSession(s.id); await loadSessions(); toast.success('Restored') } catch { toast.error('Could not restore campaign') } }}>
+                                    Restore
+                                  </Button>
+                                  <Button type="button" size="sm" variant="destructive" className="h-8 px-2 text-[10px]" onClick={async () => { if (confirm('Permanently delete this campaign?')) { try { await api.permanentDeleteSession(s.id); await loadSessions(); toast.success('Permanently deleted') } catch { toast.error('Could not delete campaign') } } }}>
+                                    Delete
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </ScrollArea>
+                <div className="flex shrink-0 items-center justify-between border-t px-4 py-3 text-xs text-muted-foreground">
+                  <span>{showTrash ? 'Trash total sent' : 'Total sent'}</span>
+                  <span className="tabular-nums">{totalSent.toLocaleString()} / {totalAll.toLocaleString()}</span>
+                </div>
+              </SheetContent>
+            </Sheet>
             {mounted && (
               <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
                 {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -237,7 +324,7 @@ export default function Home() {
 
         {/* Main */}
         <main className="flex-1 min-w-0 overflow-y-auto">
-          <div className="p-4 sm:p-6 pb-36 lg:pb-12">
+          <div className="p-4 sm:p-6 pb-8 lg:pb-12">
             {view === 'wizard' ? (
               <Wizard key={wizardKey} onLaunched={onLaunched} onCancel={newCampaign} initialName={wizardInitialName} initialColor={wizardInitialColor} initialCategory={wizardInitialCategory} />
             ) : selectedId ? (
@@ -263,27 +350,6 @@ export default function Home() {
         </div>
       </footer>
 
-      {/* Mobile history bar */}
-      {sessions.length > 0 && view === 'wizard' && (
-        <div className="lg:hidden fixed bottom-12 left-0 right-0 border-t bg-background/95 backdrop-blur p-2 max-h-48 overflow-y-auto scroll-thin">
-          <p className="text-[10px] font-medium text-muted-foreground px-1 pb-1">Recent campaigns</p>
-          <div className="flex gap-2 overflow-x-auto scroll-thin pb-1">
-            {sessions.slice(0, 8).map((s) => {
-              const meta = sessionStatusMeta[s.status]
-              return (
-                <button key={s.id} onClick={() => openSession(s.id)} className="shrink-0 w-44 text-left p-2 rounded-lg border bg-background">
-                  <div className="flex items-center justify-between gap-1 mb-0.5">
-                    <span className="text-xs font-medium truncate">{s.name}</span>
-                    <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${meta.dot}`} />
-                  </div>
-                  <span className={`text-[9px] px-1 py-0.5 rounded ${meta.color} border`}>{meta.label}</span>
-                  <span className="text-[9px] text-muted-foreground ml-1">{s.sentCount}/{s.totalEmails}</span>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
     </div>
     <Dialog open={campaignModalOpen} onOpenChange={setCampaignModalOpen}>
       <DialogContent className="sm:max-w-md">
