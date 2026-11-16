@@ -48,6 +48,17 @@ const CONSUMER_DOMAINS = new Set([
 
 const PUBLIC_SUFFIX = /\.(?:co|com|org|net|ac|gov|edu|ne|or|go)\.[a-z]{2}$/i
 
+// Inboxes that belong to a team, not a person. "Hi Hello" is worse than
+// "Hi Acme Team", so derive a team label from the company for these.
+const GENERIC_LOCAL_PARTS = new Set([
+  'hello', 'hi', 'hey', 'info', 'contact', 'support', 'help', 'sales', 'admin',
+  'team', 'office', 'mail', 'email', 'enquiries', 'inquiries', 'billing',
+  'accounts', 'accounting', 'marketing', 'careers', 'jobs', 'press', 'media',
+  'pr', 'legal', 'privacy', 'security', 'noreply', 'donotreply', 'webmaster',
+  'postmaster', 'feedback', 'service', 'services', 'orders', 'bookings',
+  'events', 'partners',
+])
+
 export function isValidEmail(value: string): boolean {
   return EMAIL_ANCHORED.test(value.trim())
 }
@@ -59,6 +70,11 @@ export function emailDomain(email: string): string {
 /** "john.doe+news@acme.com" → "John Doe" — a friendly guess for empty names. */
 export function deriveDisplayName(email: string): string {
   const local = (email.split('@')[0] || '').replace(/\+.*$/, '')
+  if (GENERIC_LOCAL_PARTS.has(local.toLowerCase().replace(/[^a-z0-9]+/g, ''))) {
+    const company = deriveCompany(email)
+    if (company && company !== 'Personal' && company !== '—') return `${company} Team`
+    return local.charAt(0).toUpperCase() + local.slice(1).toLowerCase()
+  }
   const words = local
     .replace(/\d+/g, ' ')
     .split(/[._-]+/)

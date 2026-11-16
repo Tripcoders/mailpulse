@@ -399,7 +399,7 @@ export function RecipientPicker({
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-[1fr_1.2fr_auto] gap-2 items-end">
               <div>
-                <Label htmlFor="single-name" className="text-[11px] text-muted-foreground">Name / company (optional)</Label>
+                <Label htmlFor="single-name" className="text-[11px] text-muted-foreground">Name (optional)</Label>
                 <Input
                   id="single-name"
                   value={singleName}
@@ -457,8 +457,8 @@ export function RecipientPicker({
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Filter name, email or company…"
-                  className="h-8 w-56 pl-8 text-xs"
+                  placeholder="Filter recipients…"
+                  className="h-8 w-48 pl-8 text-xs"
                   aria-label="Filter recipients"
                 />
               </div>
@@ -474,8 +474,15 @@ export function RecipientPicker({
                 </SelectContent>
               </Select>
               {missingNames > 0 && (
-                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={fillMissingNames} title="Guess names from the email address and fill the blank ones">
-                  <Sparkles className="h-3.5 w-3.5" /> Fill {missingNames} name{missingNames === 1 ? '' : 's'}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={fillMissingNames}
+                  title={`Guess names for ${missingNames} blank recipient${missingNames === 1 ? '' : 's'} from the email address`}
+                >
+                  <Sparkles className="h-3.5 w-3.5" /> Fill missing names
+                  <span className="tabular-nums text-muted-foreground">{missingNames}</span>
                 </Button>
               )}
             </div>
@@ -513,10 +520,8 @@ export function RecipientPicker({
                       <span className="text-sm text-foreground/90 truncate block max-w-[22rem]" title={r.email}>{r.email}</span>
                     </td>
                     <td className="px-3 py-1.5 hidden md:table-cell">
-                      <span className="text-xs text-muted-foreground truncate block max-w-[12rem]" title={r.domain}>
-                        {r.company}
-                        <span className="opacity-60"> · {r.domain}</span>
-                      </span>
+                      <span className="block text-xs font-medium text-foreground/80 truncate max-w-[12rem]" title={r.company}>{r.company}</span>
+                      <span className="block text-[11px] text-muted-foreground truncate max-w-[12rem]" title={r.domain}>{r.domain}</span>
                     </td>
                     <td className="px-3 py-1.5 text-right">
                       <Button
@@ -576,10 +581,13 @@ export function RecipientPicker({
       )}
 
       {recipients.length > 0 && (
-        <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-          Names are editable inline. Blank names fall back to the email address when sending, and{' '}
-          <b className="font-medium text-foreground">Fill missing names</b> turns addresses like jane.doe@acme.com into “Jane Doe”.
+        <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
+          <CheckCircle2 className="h-3.5 w-3.5 mt-px text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <span>
+            Names are editable inline — click any name to change it. Blank names fall back to the email address when sending.{' '}
+            <b className="font-medium text-foreground">Fill missing names</b> guesses them instead: jane.doe@acme.com becomes
+            “Jane Doe” and hello@acme.com becomes “Acme Team”.
+          </span>
         </p>
       )}
     </div>
