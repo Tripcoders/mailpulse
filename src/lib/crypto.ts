@@ -2,16 +2,22 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypt
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { join } from 'path'
 
-// The key lives at SECRET_KEY_PATH (configurable for containers that mount a
-// shared volume) or db/secret.key, and is generated on first use — it never
-// leaves this machine and is never included in any API response, so passwords
-// are stored encrypted and can only be decrypted server-side at send time.
+// The key comes from SECRET_KEY when set — a stable value shared by every
+// serverless instance, so a password remembered on one request can be
+// decrypted on the next. Containers/VPS can instead mount SECRET_KEY_PATH, and
+// local dev falls back to db/secret.key, generated on first use. It never
+// leaves the server and is never included in any API response.
+const SECRET = process.env.SECRET_KEY || ''
 const KEY_PATH = process.env.SECRET_KEY_PATH || join(process.cwd(), 'db', 'secret.key')
 
 let cachedKey: Buffer | null = null
 
 function getKey(): Buffer {
   if (cachedKey) return cachedKey
+  if (SECRET) {
+    cachedKey = scryptSync(SECRET, 'mailpulse-salt-v1', 32)
+    return cachedKey
+  }
   if (existsSync(KEY_PATH)) {
     cachedKey = scryptSync(readFileSync(KEY_PATH, 'utf8').trim(), 'mailpulse-salt-v1', 32)
   } else {
