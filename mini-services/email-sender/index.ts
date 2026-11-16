@@ -40,14 +40,12 @@ const FAILURE_SPIKE_LIMIT = 5 // auto-pause after N consecutive failures
 const TRANSIENT_RE = /ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|esocket|EPIPE|timeout|temporar|rate.?limit|greylist|421|451|deferr/i
 
 // ─────────────────────────────────────────────────────────────
-// Socket.io server + HTTP fallback server on a dedicated port.
-// (socket.io with path '/' owns ALL requests on its port, so the
-// HTTP control plane — used as the fallback transport and for
-// health checks — runs on httpServer PORT+1.)
+// One HTTP server for everything: socket.io on /socket.io plus the
+// HTTP control plane (/health, /control/*) on the same port. This makes the
+// engine deployable on hosts that expose a single public port (Render,
+// Railway, Fly, a VPS) and keeps the health check reachable.
 // ─────────────────────────────────────────────────────────────
-const httpServer = createServer()
-
-const controlServer = createServer(async (req, res) => {
+const httpServer = createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
@@ -84,8 +82,9 @@ const controlServer = createServer(async (req, res) => {
   return writeErr('Not found', 404)
 })
 
+const SOCKET_PATH = process.env.SOCKET_PATH || '/socket.io'
 const io = new Server(httpServer, {
-  path: '/',
+  path: SOCKET_PATH,
   cors: { origin: '*', methods: ['GET', 'POST'] },
   pingTimeout: 60000,
   pingInterval: 25000,
@@ -486,14 +485,10 @@ io.on('connection', (socket: Socket) => {
 // Start
 // ─────────────────────────────────────────────────────────────
 const PORT = Number(process.env.PORT || 3003)
-const CONTROL_PORT = Number(process.env.CONTROL_PORT || PORT + 1)
 
 recoverOnBoot().finally(() => {
   httpServer.listen(PORT, () => {
-    console.log(`📨 email-sender service running on port ${PORT} (socket.io)`)
-  })
-  controlServer.listen(CONTROL_PORT, () => {
-    console.log(`🛟 engine HTTP control plane on port ${CONTROL_PORT} (/health, /control/*)`)
+    console.log(`📨 email-sender service running on port ${PORT} (socket path ${SOCKET_PATH}, /health, /control/*)`)
   })
 })
 

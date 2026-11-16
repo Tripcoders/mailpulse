@@ -84,7 +84,7 @@ export function useSessionSocket({ sessionId, onProgress, onCompleted, onCancell
       } else if (c.rawUrl) {
         s = io(c.rawUrl, baseOpts)
       } else {
-        s = io(c.path || '/engine/socket', baseOpts)
+        s = io({ path: c.path || '/engine/socket', ...baseOpts })
       }
       current = s
       socketRef.current = s

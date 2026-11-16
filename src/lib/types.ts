@@ -99,7 +99,10 @@ export interface EmailTemplate {
   name: string
   subject: string
   body: string
+  signatureText?: string | null
+  signatureImage?: string | null
   createdAt: string
+  updatedAt?: string
 }
 
 export interface LogEntry {

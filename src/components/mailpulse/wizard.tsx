@@ -10,12 +10,17 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
 import {
   UploadCloud, FileSpreadsheet, ArrowRight, ArrowLeft, Send, Paperclip, X,
   Mail, PenLine, ImageIcon, CheckCircle2, AlertTriangle, Loader2,
   Save, FileText, ShieldCheck, Zap, Settings2, User, Link2, Bold, Italic,
-  Eye, Sparkles, Download, RotateCcw, Trash2, CircleAlert, Info,
+  Eye, Sparkles, RotateCcw, Trash2, CircleAlert, Info,
   History, DuoTile, ColorPicker, Users,
 } from './icons'
 import { RecipientPicker } from './recipient-picker'
@@ -52,14 +57,6 @@ const PROVIDERS: { value: ProviderType; label: string; hint: string; logo: strin
   { value: 'ses', label: 'Amazon SES', hint: 'email-smtp.us-east-1 · 587 STARTTLS', logo: LOGO('amazonwebservices'), fallbackLogo: FAVICON('aws.amazon.com'), helpUrl: 'https://docs.aws.amazon.com/ses/latest/dg/smtp-credentials.html', helpLabel: 'How to get SES SMTP credentials →' },
   { value: 'smtp', label: 'Custom SMTP', hint: 'Any host — enter host & port', logo: null, fallbackLogo: null, helpUrl: null, helpLabel: '' },
 ]
-
-const DEMO_RECIPIENTS: Recipient[] = [
-  { email: 'jane@example.com', name: 'Jane Doe' },
-  { email: 'carlos@example.com', name: 'Carlos Rivera' },
-  { email: 'priya@example.com', name: 'Priya Sharma' },
-]
-const DEMO_SUBJECT = 'Hi {{name}}, your November update is here'
-const DEMO_BODY = `<p>Hello {{name}},</p>\n<p>This is a <b>demo preview</b> of your personalized campaign. Every recipient sees their own name, and <i>{{email}}</i> is filled in automatically.</p>\n<p><a href="https://example.com">View your dashboard →</a></p>`
 
 function ProviderLogo({ provider, size = 22 }: { provider: { value: string; label: string; logo: string | null; fallbackLogo?: string | null }; size?: number }) {
   const [stage, setStage] = useState(0)
@@ -112,7 +109,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
   const [csvMeta, setCsvMeta] = useState<any>(null)
   const [parsing, setParsing] = useState(false)
   const [recipientMode, setRecipientMode] = useState<'csv' | 'paste'>('csv')
-  const [recipientSource, setRecipientSource] = useState<'csv' | 'paste' | 'demo' | null>(null)
+  const [recipientSource, setRecipientSource] = useState<'csv' | 'paste' | null>(null)
   const [pasteText, setPasteText] = useState('')
 
   // Step 2: Compose
@@ -152,8 +149,9 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
 
   // ── Persistence: profiles (remembered SMTP), settings, draft autosave, suggestions ──
   const [profiles, setProfiles] = useState<any[]>([])
-  const [rememberPass, setRememberPass] = useState(false)
+  const [rememberPass, setRememberPass] = useState(true)
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null)
+  const [savingSender, setSavingSender] = useState(false)
   const [draftInfo, setDraftInfo] = useState<{ updatedAt: string; content: Record<string, any> } | null>(null)
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [suggestionsOpen, setSuggestionsOpen] = useState(true)
@@ -178,13 +176,39 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
         api.getDraft().catch(() => ({ draft: null })),
       ])
       if (!alive) return
-      setProfiles(profilesRes.profiles || [])
+      const profileList = profilesRes.profiles || []
+      setProfiles(profileList)
+
+      // Auto-load the default sender (or the most recently used one). This is
+      // the whole point of saved senders: a new campaign starts already
+      // configured, with the password still encrypted in the database.
+      const preferred = profileList.find((p: any) => p.isDefault) || profileList[0]
+      if (preferred) {
+        if (preferred.providerType) setProviderType(preferred.providerType)
+        setFromName(preferred.fromName || '')
+        setFromEmail(preferred.fromEmail || '')
+        setSmtpUser(preferred.smtpUser || '')
+        setSelectedProfileId(preferred.id)
+        setRememberPass(true)
+        if (preferred.smtpHost) setSmtpHost(preferred.smtpHost)
+        if (preferred.smtpPort) {
+          setSmtpPort(String(preferred.smtpPort))
+          setSmtpSecure(!!preferred.smtpSecure)
+        }
+        if (preferred.hasPassword) {
+          setTestResult({
+            ok: true,
+            message: `Saved sender loaded — ${preferred.fromEmail || preferred.smtpUser}. The password is remembered; you can launch without re-typing it.`,
+          })
+        }
+      }
 
       // Remembered settings: default to the last used provider + throttles.
       const s = settingsRes.settings || {}
       const last = s.lastCampaign as any
       if (last) {
-        if (last.providerType) setProviderType(last.providerType)
+        // A saved sender is more authoritative than the last campaign preset.
+        if (last.providerType && !preferred) setProviderType(last.providerType)
         if (last.batchSize) setBatchSize(last.batchSize)
         if (last.batchDelayMs) setBatchDelayMs(last.batchDelayMs)
         if (last.perEmailDelayMs) setPerEmailDelayMs(last.perEmailDelayMs)
@@ -204,11 +228,12 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
     sessionName, sessionColor, sessionCategory, recipients, csvMeta,
     recipientMode, recipientSource, pasteText,
     subject, bodyHtml, signatureText, signatureImage, attachments,
-    fromName, fromEmail, providerType, smtpUser,
+    fromName, fromEmail, providerType, smtpHost, smtpPort, smtpSecure,
+    smtpUser, selectedProfileId,
     batchSize, batchDelayMs, perEmailDelayMs,
     savedAt: new Date().toISOString(),
   })
-  const kafkaDeps = [sessionName, sessionColor, sessionCategory, recipients, csvMeta, recipientMode, recipientSource, pasteText, subject, bodyHtml, signatureText, signatureImage, attachments, fromName, fromEmail, providerType, smtpUser, batchSize, batchDelayMs, perEmailDelayMs]
+  const kafkaDeps = [sessionName, sessionColor, sessionCategory, recipients, csvMeta, recipientMode, recipientSource, pasteText, subject, bodyHtml, signatureText, signatureImage, attachments, fromName, fromEmail, providerType, smtpHost, smtpPort, smtpSecure, smtpUser, selectedProfileId, batchSize, batchDelayMs, perEmailDelayMs]
 
   // ── Autosave: debounced 1.2s after any change, so a crash/power-cut never
   //    loses work. Runs after initial bootstrap: user edits win over the draft.
@@ -252,7 +277,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
       } else if (!c.csvMeta && Array.isArray(c.recipients) && c.recipients.length > 0) {
         setRecipientMode('paste')
       }
-      if (c.recipientSource === 'csv' || c.recipientSource === 'paste' || c.recipientSource === 'demo') {
+      if (c.recipientSource === 'csv' || c.recipientSource === 'paste') {
         setRecipientSource(c.recipientSource)
       } else if (Array.isArray(c.recipients) && c.recipients.length > 0) {
         setRecipientSource(c.csvMeta ? 'csv' : 'paste')
@@ -267,6 +292,9 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
       setFromEmail(c.fromEmail || '')
       if (c.providerType) setProviderType(c.providerType)
       setSmtpUser(c.smtpUser || '')
+      if (c.smtpHost) setSmtpHost(c.smtpHost)
+      if (c.smtpPort) { setSmtpPort(String(c.smtpPort)); setSmtpSecure(!!c.smtpSecure) }
+      if (c.selectedProfileId) setSelectedProfileId(c.selectedProfileId)
       if (c.batchSize) setBatchSize(c.batchSize)
       if (c.batchDelayMs) setBatchDelayMs(c.batchDelayMs)
       if (c.perEmailDelayMs) setPerEmailDelayMs(c.perEmailDelayMs)
@@ -305,8 +333,8 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
     setSuggestions((prev) => prev.filter((x) => x.id !== s.id))
   }
 
-  // Apply a saved profile (fills everything except the password; if the password
-  // is remembered on this computer, launching needs no retyping at all).
+  // Apply a saved sender: fills the form, selects the encrypted password, and
+  // clears any half-typed password so the saved one is what gets used.
   const useProfile = (p: any) => {
     const profile = typeof p === 'string' ? profiles.find((x) => x.id === p) : p
     if (!profile) return
@@ -315,33 +343,123 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
     setFromEmail(profile.fromEmail)
     setSelectedProfileId(profile.id)
     setSmtpUser(profile.smtpUser)
+    setSmtpPass('')
+    setRememberPass(true)
     if (profile.smtpHost) setSmtpHost(profile.smtpHost)
     if (profile.smtpPort) { setSmtpPort(String(profile.smtpPort)); setSmtpSecure(profile.smtpSecure) }
-    setTestResult(profile.hasPassword ? { ok: true, message: 'Saved profile ready — sends with the remembered password (no retyping)' } : null)
+    setTestResult(profile.hasPassword ? { ok: true, message: 'Saved sender ready — the remembered password will be used, no re-typing needed' } : null)
+    toast.success(`Using ${profile.fromEmail || profile.smtpUser}`)
   }
+
+  const refreshProfiles = async () => {
+    const d = await api.listProfiles().catch(() => ({ profiles: [] }))
+    setProfiles(d.profiles || [])
+  }
+
   const removeProfile = async (id: string) => {
     try {
       await api.deleteProfile(id)
-      setProfiles((prev) => prev.filter((p) => p.id !== id))
-      if (selectedProfileId === id) setSelectedProfileId(null)
-      toast.success('Saved identity deleted')
+      const d = await api.listProfiles().catch(() => ({ profiles: [] }))
+      const list = d.profiles || []
+      setProfiles(list)
+      if (selectedProfileId === id) {
+        setSmtpPass('')
+        // The server promotes another sender when the default is removed;
+        // load it immediately so the form never ends up sender-less.
+        const next = list.find((p: any) => p.isDefault) || list[0]
+        if (next) {
+          setProviderType(next.providerType)
+          setFromName(next.fromName || '')
+          setFromEmail(next.fromEmail || '')
+          setSmtpUser(next.smtpUser || '')
+          setSelectedProfileId(next.id)
+          if (next.smtpHost) setSmtpHost(next.smtpHost)
+          if (next.smtpPort) { setSmtpPort(String(next.smtpPort)); setSmtpSecure(!!next.smtpSecure) }
+          setTestResult(next.hasPassword
+            ? { ok: true, message: `Switched to ${next.fromEmail || next.smtpUser} — its saved password will be used` }
+            : null)
+        } else {
+          setSelectedProfileId(null)
+          setTestResult(null)
+        }
+      }
+      toast.success('Saved sender removed')
     } catch (e: any) {
       toast.error(e.message || 'Delete failed')
     }
   }
 
-  // Persist an identity (encrypted server-side) — called after a verified test
-  // or a successful launch when "remember" is checked.
-  const persistProfile = () => {
-    if (!rememberPass || !smtpUser || !smtpPass) return
-    api.saveProfile({
-      providerType, fromName, fromEmail, smtpHost, smtpPort: Number(smtpPort),
-      smtpSecure, smtpUser, smtpPass, setDefault: true,
-    }).then((d) => {
-      setProfiles((prev) => [d.profile, ...prev.filter((p) => p.id !== d.profile.id)])
+  const makeDefault = async (id: string) => {
+    try {
+      await api.updateProfile({ id, isDefault: true })
+      await refreshProfiles()
+      toast.success('Default sender updated — every new campaign will load it')
+    } catch (e: any) {
+      toast.error(e.message || 'Could not update the default sender')
+    }
+  }
+
+  const forgetPassword = async (id: string) => {
+    try {
+      await api.updateProfile({ id, clearPassword: true })
+      await refreshProfiles()
+      if (selectedProfileId === id) {
+        setSmtpPass('')
+        setTestResult({ ok: false, message: 'Saved password revoked — enter a new app password to send with this sender' })
+      }
+      toast.success('Saved password revoked — the sender details are kept')
+    } catch (e: any) {
+      toast.error(e.message || 'Could not revoke the password')
+    }
+  }
+
+  // Persist the current sender (encrypted server-side) so every new campaign
+  // starts already configured. Explicit saves always run; automatic saves
+  // (after a verified test or a launch) respect the remember switch.
+  const persistProfile = async (opts?: { silent?: boolean; force?: boolean }) => {
+    if (!smtpUser.trim()) {
+      if (!opts?.silent) toast.error('Enter the SMTP username before saving this sender')
+      return null
+    }
+    if (!opts?.force && !rememberPass) return null
+
+    const existing = selectedProfileId ? profiles.find((p) => p.id === selectedProfileId) : null
+    const reusingPassword = existing && existing.smtpUser === smtpUser && existing.hasPassword
+    if (!smtpPass && !reusingPassword) {
+      if (!opts?.silent) toast.error('Enter the app password once so it can be saved')
+      return null
+    }
+
+    setSavingSender(true)
+    try {
+      const d = await api.saveProfile({
+        id: existing && existing.smtpUser === smtpUser ? existing.id : undefined,
+        providerType,
+        fromName,
+        fromEmail,
+        smtpHost,
+        smtpPort: Number(smtpPort),
+        smtpSecure,
+        smtpUser,
+        smtpPass: smtpPass || undefined,
+        setDefault: true,
+      })
+      setProfiles((prev) => [
+        d.profile,
+        ...prev
+          .filter((p) => p.id !== d.profile.id)
+          .map((p) => ({ ...p, isDefault: false })),
+      ])
       setSelectedProfileId(d.profile.id)
-      toast.success('Identity saved — next session needs no re-typing')
-    }).catch(() => {})
+      setRememberPass(true)
+      if (!opts?.silent) toast.success('Sender saved — next campaign fills itself in automatically')
+      return d.profile
+    } catch (e: any) {
+      if (!opts?.silent) toast.error(e.message || 'Could not save this sender')
+      return null
+    } finally {
+      setSavingSender(false)
+    }
   }
 
   // Auto-fill SMTP host/port hint when a preset provider is picked
@@ -357,26 +475,6 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
     }
   }, [providerType])
 
-  // ── Demo data: fills every step so you can inspect + test all logic instantly ──
-  const loadDemoData = () => {
-    setSessionName('Demo Campaign - November Newsletter')
-    setSessionColor('#8b5cf6')
-    setSessionCategory('Newsletter')
-    setRecipients(DEMO_RECIPIENTS)
-    setCsvMeta({ totalRows: 3, duplicatesRemoved: 0, invalid: 0, detectedEmailColumn: 'email (demo)', detectedNameColumn: 'name (demo)', demo: true })
-    setRecipientMode('csv')
-    setRecipientSource('demo')
-    setPasteText('')
-    setSubject(DEMO_SUBJECT)
-    setBodyHtml(DEMO_BODY)
-    setFromName('Jane Sender')
-    setFromEmail('sender@example.com')
-    setProviderType('gmail')
-    setSmtpUser('sender@gmail.com')
-    setSignatureText('Jane Sender\nFounder, Acme Inc.\n+1 555 0100')
-    toast.success('Demo data loaded — every step is now previewable')
-  }
-
   const resetAll = () => {
     setSessionName('')
     setSessionColor('#3b82f6')
@@ -391,34 +489,14 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
     setSignatureText('')
     setSignatureImage('')
     setAttachments([])
-    setFromName('')
-    setFromEmail('')
-    setProviderType('gmail')
-    setSmtpHost('')
-    setSmtpPort('587')
-    setSmtpSecure(false)
-    setSmtpUser('')
-    setSmtpPass('')
-    setTestResult(null)
-    setSelectedProfileId(null)
+    // Sender settings are intentionally kept: a saved sender is configuration,
+    // not campaign content, and should never need re-entering.
     setSuggestions([])
     setDraftInfo(null)
     api.clearDraft().catch(() => {})
     setDirection(-1)
     setStep(0)
     toast.info('Wizard cleared')
-  }
-
-  const downloadSampleCsv = () => {
-    const csv = 'email,name\njane@example.com,Jane Doe\ncarlos@example.com,Carlos Rivera\npriya@example.com,Priya Sharma\n'
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'sample-recipients.csv'
-    a.click()
-    URL.revokeObjectURL(url)
-    toast.success('Sample CSV downloaded')
   }
 
   // ── CSV handling ──
@@ -546,14 +624,28 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
       toast.error(e.message || 'Delete failed')
     }
   }
+  const applyTemplate = (t: EmailTemplate) => {
+    setSubject(t.subject || '')
+    setBodyHtml(t.body || '')
+    // Restore the signature exactly as it was saved alongside the email.
+    setSignatureText(t.signatureText || '')
+    setSignatureImage(t.signatureImage || '')
+    toast.success(`Loaded "${t.name}"`)
+  }
+
   const saveTemplate = async () => {
-    if (!tplName.trim()) return toast.error('Give your template a name')
-    if (!subject || !bodyHtml) return toast.error('Add a subject and body first')
+    if (!subject.trim() && !bodyHtml.trim()) return toast.error('Write a subject or email body first')
     try {
-      await api.saveTemplate({ name: tplName, subject, body: bodyHtml })
-      const d = await api.listTemplates()
-      setTemplates(d.templates as EmailTemplate[])
-      toast.success('Template saved')
+      const d = await api.saveTemplate({
+        name: tplName.trim() || subject.trim().slice(0, 60) || 'Untitled email',
+        subject,
+        body: bodyHtml,
+        signatureText,
+        signatureImage,
+      })
+      const list = await api.listTemplates()
+      setTemplates(list.templates as EmailTemplate[])
+      toast.success(`Saved "${d.template?.name || tplName || 'email'}" — reusable in every campaign`)
       setSaveTplOpen(false)
       setTplName('')
     } catch (e: any) {
@@ -572,15 +664,21 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
 
   // ── Test SMTP (wired to /api/smtp/test) ──
   const testSmtp = async () => {
-    if (!smtpUser || !smtpPass) return toast.error('Enter your email and app password first')
+    const useSaved = !smtpPass && canSendWithoutTyping && !!selectedProfileId
+    if (!smtpUser || (!smtpPass && !useSaved)) return toast.error('Enter your email and app password first')
     setTesting(true)
     setTestResult(null)
     try {
-      const res = await api.testSmtp({ providerType, smtpUser, smtpPass, smtpHost, smtpPort: Number(smtpPort), smtpSecure })
+      const res = await api.testSmtp(useSaved
+        ? { profileId: selectedProfileId }
+        : { providerType, smtpUser, smtpPass, smtpHost, smtpPort: Number(smtpPort), smtpSecure })
       setTestResult({ ok: res.ok, message: res.ok ? res.message || 'Connected' : res.error || 'Failed' })
       if (res.ok) {
-        toast.success('SMTP connection verified!')
-        persistProfile()
+        toast.success(useSaved ? 'Saved sender verified!' : 'SMTP connection verified!')
+        if (!useSaved) {
+          const saved = await persistProfile({ silent: true })
+          if (saved) toast.success('Sender saved — next campaign fills itself in automatically')
+        }
       }
       else toast.error('SMTP test failed — see message')
     } catch (e: any) {
@@ -633,11 +731,13 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
       // "Unfinished campaign found" reappears next visit next to the campaign.
       api.clearDraft().catch(() => {})
       api.saveSettings({ lastCampaign: { providerType, batchSize, batchDelayMs, perEmailDelayMs } }).catch(() => {})
+      // Save the sender before trying to start, so even an engine outage never
+      // costs the user their SMTP configuration again.
+      if (smtpPass) await persistProfile({ silent: true })
       toast.success('Campaign created. Starting send engine…')
       try {
         if (smtpUser && smtpPass) {
           await api.startSession(session.id, smtpUser, smtpPass)
-          persistProfile()
         } else {
           await api.startSessionWithProfile(session.id, selectedProfileId!)
         }
@@ -693,9 +793,9 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
   }
 
   const samplePreview = (() => {
-    const r = recipients[0] || { email: 'jane@example.com', name: 'Jane Doe' }
-    const displayName = r.name || r.email.split('@')[0]
-    let html = bodyHtml || '<p style="color:#94a3b8">Your email content will appear here. Go to <b>Compose</b> or click <b>Load demo data</b> above to preview instantly.</p>'
+    const r = recipients[0] || { email: '', name: '' }
+    const displayName = r.name || (r.email ? r.email.split('@')[0] : 'your recipient')
+    let html = bodyHtml || '<p style="color:#94a3b8">Your email content will appear here. Go to <b>Compose</b> to write it and see the live preview.</p>'
     html = html
       .replace(/\{\{name\}\}/g, displayName)
       .replace(/\{\{first_name\}\}/g, displayName.split(' ')[0])
@@ -723,9 +823,6 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
           )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <Button variant="outline" size="sm" className="h-7 text-xs bg-card" onClick={loadDemoData}>
-            <Sparkles className="h-3.5 w-3.5" /> Load demo data
-          </Button>
           <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={resetAll}>
             <RotateCcw className="h-3.5 w-3.5" /> Reset
           </Button>
@@ -814,8 +911,6 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                 onModeChange={setRecipientMode}
                 onSourceChange={setRecipientSource}
                 onPasteTextChange={setPasteText}
-                onLoadDemo={loadDemoData}
-                onDownloadSample={downloadSampleCsv}
               />
 
               <div className="pt-4 border-t space-y-4">
@@ -885,37 +980,49 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                   <p className="text-sm text-muted-foreground mt-1">Write your message. Use variables to personalize per recipient. Everything previews live on the right.</p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Select onValueChange={(v) => {
-                    const t = templates.find((x) => x.id === v)
-                    if (t) { setSubject(t.subject); setBodyHtml(t.body); toast.success(`Loaded template "${t.name}"`) }
-                  }}>
-                    <SelectTrigger className="h-8 w-44 text-xs"><SelectValue placeholder="Load template" /></SelectTrigger>
-                    <SelectContent>
-                      {templates.length === 0 ? <SelectItem value="_none" disabled>No saved templates</SelectItem> :
-                        templates.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setSaveTplOpen(true)}><Save className="h-3.5 w-3.5" /> Save as template</Button>
+                  <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => { setTplName(subject.trim().slice(0, 60)); setSaveTplOpen(true) }}>
+                    <Save className="h-3.5 w-3.5" /> Save current email
+                  </Button>
                 </div>
               </div>
 
-              {templates.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 items-center text-xs">
-                  <span className="text-muted-foreground">Saved templates:</span>
-                  {templates.map((t) => (
-                    <span key={t.id} className="inline-flex items-center gap-1 border rounded-full pl-2.5 pr-1 py-0.5 bg-muted/40">
-                      {t.name}
-                      <button
-                        className="h-5 w-5 rounded-full hover:bg-rose-100 hover:text-rose-600 flex items-center justify-center"
-                        title={`Delete template "${t.name}"`}
-                        onClick={() => deleteTemplate(t.id)}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ))}
+              <div className="rounded-xl border bg-muted/20 p-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <p className="text-xs font-medium flex items-center gap-1.5">
+                    <FileText className="h-3.5 w-3.5 text-brand" /> Saved emails
+                    <Badge variant="outline" className="text-[10px] tabular-nums">{templates.length}</Badge>
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">Stored in your database — reusable in every campaign.</p>
                 </div>
-              )}
+                {templates.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground mt-2">
+                    Nothing saved yet. Write the email, then press <b className="text-foreground">Save current email</b> once — subject, body and signature are kept together.
+                  </p>
+                ) : (
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-44 overflow-y-auto scroll-thin">
+                    {templates.map((t) => (
+                      <div key={t.id} className="flex items-stretch rounded-lg border bg-card overflow-hidden">
+                        <button
+                          onClick={() => applyTemplate(t)}
+                          className="min-w-0 flex-1 text-left px-3 py-2 hover:bg-muted/50 transition-colors"
+                          title={`Load "${t.name}"`}
+                        >
+                          <span className="block text-xs font-medium truncate">{t.name}</span>
+                          <span className="block text-[11px] text-muted-foreground truncate">{t.subject || 'No subject'}</span>
+                        </button>
+                        <button
+                          className="w-8 shrink-0 flex items-center justify-center text-muted-foreground hover:bg-rose-100 hover:text-rose-600 dark:hover:bg-rose-500/15 transition-colors"
+                          title={`Delete saved email "${t.name}"`}
+                          aria-label={`Delete saved email ${t.name}`}
+                          onClick={() => deleteTemplate(t.id)}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               <div>
                 <Label htmlFor="subject">Subject line <span className="text-rose-500">*</span></Label>
@@ -954,7 +1061,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                   <p className="text-xs text-muted-foreground mt-2">{bodyHtml.length} characters · variables render per recipient</p>
                 </div>
                 <div>
-                  <Label>Live preview <span className="text-xs text-muted-foreground font-normal">· as {samplePreview.recipient.email}</span></Label>
+                  <Label>Live preview <span className="text-xs text-muted-foreground font-normal">· {samplePreview.recipient.email ? `as ${samplePreview.recipient.email}` : 'add a recipient to personalize'}</span></Label>
                   <div className="mt-1 border rounded-lg overflow-hidden bg-card">
                     <div className="px-3 py-2 border-b bg-muted/40 text-xs">
                       <div className="font-medium truncate">Subject: {samplePreview.subject || <span className="text-muted-foreground italic">(no subject)</span>}</div>
@@ -1006,7 +1113,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                 <div className="grid sm:grid-cols-2 gap-3">
                   <div>
                     <Label htmlFor="sig-text" className="text-xs">Text signature</Label>
-                    <Textarea id="sig-text" value={signatureText} onChange={(e) => setSignatureText(e.target.value)} placeholder={"John Doe\nFounder, Acme Inc.\n+1 555 0100"} className="mt-1 text-xs min-h-[90px]" />
+                    <Textarea id="sig-text" value={signatureText} onChange={(e) => setSignatureText(e.target.value)} placeholder={"Your name\nYour role or company\nContact details (optional)"} className="mt-1 text-xs min-h-[90px]" />
                     {signatureText && (
                       <Button variant="ghost" size="sm" className="h-7 text-xs text-rose-600 mt-1" onClick={() => { setSignatureText(''); toast.info('Text signature cleared') }}>
                         <Trash2 className="h-3.5 w-3.5" /> Clear text
@@ -1046,9 +1153,6 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                   </h2>
                   <p className="text-sm text-muted-foreground mt-1">Add files to attach to every email. Up to 25 MB each. Drag &amp; drop or browse.</p>
                 </div>
-                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={loadDemoData}>
-                  <Sparkles className="h-3.5 w-3.5" /> Demo data
-                </Button>
               </div>
               <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
                 <p className="font-medium text-foreground flex items-center gap-1.5"><Info className="h-3.5 w-3.5" /> What this step requires</p>
@@ -1104,11 +1208,10 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                     <DuoTile icon={ShieldCheck} size="sm" /> Sender &amp; SMTP configuration
                     <Badge variant="secondary" className="text-[10px]">Required</Badge>
                   </h2>
-                  <p className="text-sm text-muted-foreground mt-1">Choose your provider and paste your app password. With <b>Remember</b> enabled, the password is stored encrypted on this machine so you never re-type it.</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Saved senders live in your database. Your default sender — including the encrypted app password — is filled in automatically every new campaign, so you only configure it once.
+                  </p>
                 </div>
-                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={loadDemoData}>
-                  <Sparkles className="h-3.5 w-3.5" /> Fill demo sender
-                </Button>
               </div>
 
               <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
@@ -1117,43 +1220,146 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                   <li><b>From name + From email</b> — what recipients see in their inbox.</li>
                   <li><b>Provider</b> — pick by logo below; host/port auto-fill (Custom SMTP needs host + port).</li>
                   <li><b>SMTP username + app password</b> — never your normal login; use the help link for your provider.</li>
-                  <li><b>Remember</b> — tick the box after entering your password to store it encrypted, so future sessions fill everything automatically.</li>
+                  <li><b>Save sender</b> — stores the sender and password encrypted in your database. The default is reused automatically; other saved senders are one click away.</li>
                   <li><b>Test connection</b> — verifies before you launch. Throttling is optional but recommended.</li>
                 </ul>
               </div>
 
-              {/* Saved identities — one click re-fills sender + provider + password */}
-              {profiles.length > 0 && (
-                <div className="rounded-lg border p-3">
-                  <p className="text-xs font-medium text-foreground flex items-center gap-1.5 mb-2">
-                    <History className="h-3.5 w-3.5 text-brand" /> Saved identities — click to fill
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {profiles.map((p) => (
-                      <span key={p.id} className={`inline-flex items-center rounded-full border text-xs ${selectedProfileId === p.id ? 'border-brand bg-blue-50 text-blue-900' : 'border-border bg-background text-foreground'}`}>
-                        <button onClick={() => useProfile(p)} className="px-3 py-1.5 flex items-center gap-1.5" title={p.hasPassword ? 'Fills sender, provider and the remembered password' : 'Fills sender and provider (password not saved)'}>
-                          <ProviderLogo provider={PROVIDERS.find((x) => x.value === p.providerType) || activeProvider} size={14} />
-                          {p.fromEmail || p.smtpUser}
-                          {p.hasPassword && <CheckCircle2 className="h-3 w-3 text-emerald-600" />}
-                        </button>
-                        <button onClick={() => removeProfile(p.id)} title="Forget this identity" className="pr-2.5 py-1.5 text-muted-foreground hover:text-rose-600 cursor-pointer">
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </span>
-                    ))}
+              {/* Saved senders — persistent, encrypted, reusable across campaigns */}
+              <div className="rounded-xl border bg-card p-4">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div>
+                    <p className="text-sm font-medium flex items-center gap-2">
+                      <History className="h-4 w-4 text-brand" /> Saved senders
+                      <Badge variant="outline" className="text-[10px] tabular-nums">{profiles.length}</Badge>
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Stored encrypted in your database. The default loads automatically in every new campaign; switch senders with one click.
+                    </p>
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => persistProfile({ force: true })}
+                    disabled={savingSender || !smtpUser}
+                  >
+                    {savingSender ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save current sender
+                  </Button>
                 </div>
-              )}
+
+                {profiles.length === 0 ? (
+                  <div className="mt-3 rounded-lg border border-dashed px-3 py-4 text-xs text-muted-foreground">
+                    No saved senders yet. Fill in the form below once and press <b>Save current sender</b>. From then on it is filled in automatically — even after you log off or come back later.
+                  </div>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    {profiles.map((p) => {
+                      const inUse = selectedProfileId === p.id
+                      const provider = PROVIDERS.find((x) => x.value === p.providerType) || activeProvider
+                      return (
+                        <div
+                          key={p.id}
+                          className={`rounded-lg border p-3 flex items-center gap-3 flex-wrap transition-colors ${
+                            inUse ? 'border-brand/60 bg-blue-50/50 dark:bg-blue-500/10' : 'bg-background'
+                          }`}
+                        >
+                          <ProviderLogo provider={provider} size={22} />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium flex items-center gap-2 flex-wrap">
+                              <span className="truncate">{p.fromName || p.name || p.smtpUser}</span>
+                              {p.isDefault && <Badge variant="outline" className="text-[10px] border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300">Default</Badge>}
+                              {inUse && <Badge variant="outline" className="text-[10px] border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">In use</Badge>}
+                              {p.hasPassword ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-normal text-emerald-600 dark:text-emerald-400">
+                                  <CheckCircle2 className="h-3 w-3" /> password saved
+                                </span>
+                              ) : (
+                                <span className="text-[11px] font-normal text-amber-600 dark:text-amber-400">no password</span>
+                              )}
+                            </p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {p.fromEmail || p.smtpUser} · {provider.label}
+                              {p.smtpHost ? ` · ${p.smtpHost}` : ''}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <Button
+                              size="sm"
+                              variant={inUse ? 'secondary' : 'outline'}
+                              className="h-7 text-xs"
+                              onClick={() => useProfile(p)}
+                              disabled={inUse}
+                              title={p.hasPassword ? 'Use this sender with its saved password' : 'Use this sender — add a password to send'}
+                            >
+                              {inUse ? 'In use' : 'Use'}
+                            </Button>
+                            {!p.isDefault && (
+                              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => makeDefault(p.id)}>
+                                Make default
+                              </Button>
+                            )}
+                            {p.hasPassword && (
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground">
+                                    Revoke password
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Revoke the saved password?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      The sender details stay saved, but the encrypted app password is deleted. You will need to type it again before sending with this sender.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Keep password</AlertDialogCancel>
+                                    <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => forgetPassword(p.id)}>
+                                      Revoke password
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            )}
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" aria-label={`Remove saved sender ${p.fromEmail || p.smtpUser}`}>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Remove this saved sender?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    This deletes {p.fromEmail || p.smtpUser} and its encrypted password from your database. You can save it again later.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Keep sender</AlertDialogCancel>
+                                  <AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => removeProfile(p.id)}>
+                                    Remove sender
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
 
               <div className="grid sm:grid-cols-2 gap-3">
                 <div>
                   <Label htmlFor="from-name">From name <span className="text-rose-500">*</span></Label>
-                  <Input id="from-name" value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder="John Doe" className="mt-1" />
+                  <Input id="from-name" value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder="Your name or brand" className="mt-1" />
                   <p className="text-xs text-muted-foreground mt-1">Display name in the inbox.</p>
                 </div>
                 <div>
                   <Label htmlFor="from-email">From email <span className="text-rose-500">*</span></Label>
-                  <Input id="from-email" type="email" value={fromEmail} onChange={(e) => setFromEmail(e.target.value)} placeholder="john@gmail.com" className="mt-1" />
+                  <Input id="from-email" type="email" value={fromEmail} onChange={(e) => setFromEmail(e.target.value)} placeholder="Your sending address" className="mt-1" />
                   <p className="text-xs text-muted-foreground mt-1">Must match your SMTP account.</p>
                 </div>
               </div>
@@ -1191,7 +1397,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                 <div className="grid sm:grid-cols-3 gap-3 p-3 border rounded-lg bg-muted/30">
                   <div>
                     <Label htmlFor="smtp-host" className="text-xs">SMTP host <span className="text-rose-500">*</span></Label>
-                    <Input id="smtp-host" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} placeholder="smtp.example.com" className="mt-1" />
+                    <Input id="smtp-host" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} placeholder="Your provider's SMTP host" className="mt-1" />
                   </div>
                   <div>
                     <Label htmlFor="smtp-port" className="text-xs">Port <span className="text-rose-500">*</span></Label>
@@ -1214,7 +1420,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
               <div className="grid sm:grid-cols-2 gap-3">
                 <div>
                   <Label htmlFor="smtp-user">Email / SMTP username <span className="text-rose-500">*</span></Label>
-                  <Input id="smtp-user" value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} placeholder="john@gmail.com" className="mt-1" autoComplete="username" />
+                  <Input id="smtp-user" value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} placeholder="Your SMTP username" className="mt-1" autoComplete="username" />
                 </div>
                 <div>
                   <Label htmlFor="smtp-pass">App password <span className="text-rose-500">*</span></Label>
@@ -1222,24 +1428,31 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                 </div>
               </div>
 
-              <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer select-none" title="Stored encrypted (AES-256-GCM) on this computer only — never sent anywhere else">
+              <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer select-none" title="Encrypted (AES-256-GCM) before it is stored in your database">
                 <input type="checkbox" checked={rememberPass} onChange={(e) => setRememberPass(e.target.checked)} className="h-4 w-4 mt-0.5 rounded cursor-pointer" />
                 <span>
-                  <b className="text-foreground">Remember this app password</b> — encrypted on this computer only, so
-                  you never have to re-type it and future campaigns fill themselves in automatically.
+                  <b className="text-foreground">Save this sender automatically</b> — the password is encrypted before it reaches your database and stays available on every visit, so you never re-type it.
                   {selectedProfileId && profiles.some((p) => p.id === selectedProfileId && p.hasPassword) && (
-                    <span className="block mt-0.5 text-emerald-600 font-medium">✓ A password is already remembered for {smtpUser || 'this identity'} — you can send without typing it.</span>
+                    <span className="block mt-0.5 text-emerald-600 font-medium">✓ A password is already saved for {smtpUser || 'this sender'} — you can launch without typing it.</span>
                   )}
                 </span>
               </label>
 
               <div className="flex items-center gap-3 flex-wrap">
-                <Button variant="outline" onClick={testSmtp} disabled={testing || !smtpUser || !smtpPass}>
+                <Button variant="outline" onClick={testSmtp} disabled={testing || !smtpUser || (!smtpPass && !canSendWithoutTyping)}>
                   {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />} Test connection
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => persistProfile({ force: true })}
+                  disabled={savingSender || !smtpUser}
+                  title="Save this sender and password to your database"
+                >
+                  {savingSender ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save sender
                 </Button>
                 {testResult && (
                   <span className={`inline-flex items-center gap-1.5 text-sm ${testResult.ok ? 'text-emerald-600' : 'text-rose-600'}`}>
-                    {testResult.ok ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                    {testResult.ok ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertTriangle className="h-4 w-4 shrink-0" />}
                     {testResult.message}
                   </span>
                 )}
@@ -1432,15 +1645,24 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
       <Dialog open={saveTplOpen} onOpenChange={setSaveTplOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Save email as template</DialogTitle>
+            <DialogTitle>Save this email for reuse</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <p className="text-sm text-muted-foreground">Current subject: <b>{subject || '(none)'}</b></p>
-            <Input value={tplName} onChange={(e) => setTplName(e.target.value)} placeholder="Template name" />
+            <p className="text-sm text-muted-foreground">
+              Subject, body and signature are saved together in your database. Saved emails load in every new campaign.
+            </p>
+            <p className="text-xs text-muted-foreground">Subject: <b className="text-foreground">{subject || '(none)'}</b></p>
+            <Input
+              value={tplName}
+              onChange={(e) => setTplName(e.target.value)}
+              placeholder="Name this email (defaults to the subject)"
+              onKeyDown={(e) => { if (e.key === 'Enter') saveTemplate() }}
+            />
+            <p className="text-[11px] text-muted-foreground">Saving under an existing name updates that saved email instead of duplicating it.</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSaveTplOpen(false)}>Cancel</Button>
-            <Button onClick={saveTemplate} className="bg-brand text-white hover:bg-blue-700">Save template</Button>
+            <Button onClick={saveTemplate} className="bg-brand text-white hover:bg-blue-700">Save email</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -14,8 +14,8 @@ import {
 } from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
 import {
-  UploadCloud, FileSpreadsheet, Download, Sparkles, Loader2, Plus, X, Search,
-  Users, CheckCircle2, ClipboardText, Trash2, Mail, UserPlus,
+  UploadCloud, FileSpreadsheet, Sparkles, Loader2, Plus, X, Search,
+  Users, CheckCircle2, ClipboardText, Trash2, Mail, UserPlus, Tag, ListIcon,
 } from './icons'
 import { DuoTile } from './icons'
 import {
@@ -25,15 +25,15 @@ import {
 import type { Recipient } from '@/lib/types'
 
 type RecipientMode = 'csv' | 'paste'
-type RecipientSource = 'csv' | 'paste' | 'demo' | null
+type RecipientSource = 'csv' | 'paste' | null
 type SortKey = 'added' | 'name' | 'email' | 'company'
+type ListView = 'tags' | 'table'
 
 const VISIBLE_LIMIT = 100
 
 const SOURCE_LABEL: Record<Exclude<RecipientSource, null>, string> = {
   csv: 'CSV import',
   paste: 'Pasted list',
-  demo: 'Demo data',
 }
 
 interface RecipientPickerProps {
@@ -49,8 +49,6 @@ interface RecipientPickerProps {
   onModeChange: (mode: RecipientMode) => void
   onSourceChange: (source: RecipientSource) => void
   onPasteTextChange: (value: string) => void
-  onLoadDemo: () => void
-  onDownloadSample: () => void
 }
 
 function Stat({ label, value, tone = 'default' }: { label: string; value: number | string; tone?: 'default' | 'emerald' | 'amber' | 'rose' }) {
@@ -81,14 +79,12 @@ export function RecipientPicker({
   onModeChange,
   onSourceChange,
   onPasteTextChange,
-  onLoadDemo,
-  onDownloadSample,
 }: RecipientPickerProps) {
   const [dragOver, setDragOver] = useState(false)
-  const [singleName, setSingleName] = useState('')
   const [singleEmail, setSingleEmail] = useState('')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<SortKey>('added')
+  const [view, setView] = useState<ListView>('tags')
 
   const stats = useMemo(() => parsePastedEmails(pasteText), [pasteText])
 
@@ -100,6 +96,9 @@ export function RecipientPicker({
         ...recipient,
         displayName: recipient.name.trim() || deriveDisplayName(recipient.email),
         company,
+        // Only companies the user actually supplied belong in the compact
+        // tag view; derived domains stay in the table as helpful context.
+        explicitCompany: recipient.company?.trim() || '',
         domain: emailDomain(recipient.email),
       }
     })
@@ -152,7 +151,7 @@ export function RecipientPicker({
   const addSingle = () => {
     const raw = singleEmail.trim()
     if (!raw) {
-      toast.error('Enter an email address first')
+      toast.error('Paste an email address first')
       return
     }
     const parsed = parsePastedEmails(raw)
@@ -160,12 +159,7 @@ export function RecipientPicker({
       toast.error('That does not look like a valid email address')
       return
     }
-    const typedName = singleName.trim()
-    const incoming: Recipient[] = parsed.recipients.map((r) => ({
-      ...r,
-      name: r.name || (parsed.recipients.length === 1 ? typedName : ''),
-    }))
-    const merged = mergeRecipients(recipients, incoming)
+    const merged = mergeRecipients(recipients, parsed.recipients)
     if (merged.added === 0 && merged.updated === 0) {
       toast.info('Already in your list')
       setSingleEmail('')
@@ -174,7 +168,6 @@ export function RecipientPicker({
     onRecipientsChange(merged.recipients)
     onSourceChange('paste')
     setSingleEmail('')
-    setSingleName('')
     if (merged.overflow > 0) {
       toast.error(`Recipient limit is ${MAX_RECIPIENTS.toLocaleString()} — skipped ${merged.overflow}.`)
     } else {
@@ -219,14 +212,6 @@ export function RecipientPicker({
             Upload a CSV, paste a whole list, or add people one at a time. Every route validates addresses,
             removes duplicates, and feeds the same compose → attach → send flow.
           </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onDownloadSample}>
-            <Download className="h-3.5 w-3.5" /> Sample CSV
-          </Button>
-          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onLoadDemo}>
-            <Sparkles className="h-3.5 w-3.5" /> Demo data
-          </Button>
         </div>
       </div>
 
@@ -326,9 +311,9 @@ export function RecipientPicker({
                   <ClipboardText className="h-4 w-4 text-brand" /> Paste emails in bulk
                 </Label>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  One per line, comma separated, or straight from a spreadsheet. Names and companies are picked
-                  up when present — <span className="text-foreground/80">Jane Doe &lt;jane@acme.com&gt;</span>,{' '}
-                  <span className="text-foreground/80">jane@acme.com, Jane Doe</span>, or just the raw addresses.
+                  One per line, comma separated, or straight from a spreadsheet. Names and companies are detected
+                  automatically when present — <span className="text-foreground/80">Name &lt;email&gt;</span>,{' '}
+                  <span className="text-foreground/80">email, Name</span>, or <span className="text-foreground/80">Name, Company, email</span>.
                 </p>
               </div>
               {pasteText.trim() && (
@@ -344,7 +329,7 @@ export function RecipientPicker({
               onChange={(e) => onPasteTextChange(e.target.value)}
               rows={5}
               spellCheck={false}
-              placeholder={'jane@acme.com\nJohn Smith <john@company.com>\npriya@example.com, Priya Sharma\nAcme Inc <hello@acme.com>'}
+              placeholder={'Paste one email per line\nOr copy a whole column from a spreadsheet\n"Name <email>" and "email, Name" also work\nNames and companies are detected automatically'}
               className="font-mono text-xs leading-relaxed resize-y min-h-28 bg-card"
             />
 
@@ -394,29 +379,19 @@ export function RecipientPicker({
             <div>
               <p className="text-sm font-medium flex items-center gap-1.5"><UserPlus className="h-4 w-4 text-brand" /> Add one at a time</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Paste a single email and press Enter — or keep adding them one by one. Great for a handful of targeted sends.
+                Paste a single email — or a full <span className="font-mono text-[11px]">Name &lt;email&gt;</span> — and press Enter.
+                Each one becomes a removable tag in the list below.
               </p>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-[1fr_1.2fr_auto] gap-2 items-end">
-              <div>
-                <Label htmlFor="single-name" className="text-[11px] text-muted-foreground">Name (optional)</Label>
-                <Input
-                  id="single-name"
-                  value={singleName}
-                  onChange={(e) => setSingleName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('single-email')?.focus() } }}
-                  placeholder="Jane Doe"
-                  className="h-9 mt-1"
-                />
-              </div>
-              <div>
+            <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
+              <div className="flex-1">
                 <Label htmlFor="single-email" className="text-[11px] text-muted-foreground">Email address</Label>
                 <Input
                   id="single-email"
                   value={singleEmail}
                   onChange={(e) => setSingleEmail(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSingle() } }}
-                  placeholder="jane@acme.com"
+                  placeholder="Paste an email address or a full contact"
                   inputMode="email"
                   autoComplete="off"
                   className="h-9 mt-1"
@@ -427,7 +402,7 @@ export function RecipientPicker({
               </Button>
             </div>
             <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-              <Mail className="h-3 w-3" /> Pasting several addresses into the email field adds them all at once.
+              <Mail className="h-3 w-3" /> Pasting several addresses at once adds them all — duplicates are ignored.
             </p>
           </div>
         </div>
@@ -462,6 +437,32 @@ export function RecipientPicker({
                   aria-label="Filter recipients"
                 />
               </div>
+              <div className="flex rounded-lg border bg-background p-0.5" role="tablist" aria-label="Recipient list view">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={view === 'tags'}
+                  onClick={() => setView('tags')}
+                  title="Tag view — quick visual list with one-click removal"
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
+                    view === 'tags' ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Tag className="h-3.5 w-3.5" /> Tags
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={view === 'table'}
+                  onClick={() => setView('table')}
+                  title="Table view — edit names and company details inline"
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
+                    view === 'table' ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <ListIcon className="h-3.5 w-3.5" /> Table
+                </button>
+              </div>
               <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
                 <SelectTrigger className="h-8 w-36 text-xs" aria-label="Sort recipients">
                   <SelectValue />
@@ -488,6 +489,47 @@ export function RecipientPicker({
             </div>
           </div>
 
+          {view === 'tags' ? (
+            <div className="max-h-80 overflow-y-auto scroll-thin p-3">
+              {visible.length === 0 ? (
+                <p className="px-2 py-8 text-center text-sm text-muted-foreground">
+                  No recipients match “{query}”.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {visible.map((r) => (
+                    <span
+                      key={r.email}
+                      className="group inline-flex max-w-full items-center gap-1.5 rounded-full border bg-muted/40 pl-2.5 pr-1 py-1 text-xs transition-colors hover:border-brand/50 hover:bg-blue-500/5"
+                      title={`${r.displayName} <${r.email}>${r.explicitCompany ? ` · ${r.explicitCompany}` : ''}`}
+                    >
+                      <span className="min-w-0 flex items-baseline gap-1.5">
+                        <span className="truncate font-medium text-foreground max-w-[11rem]">{r.displayName}</span>
+                        <span className="truncate font-mono text-[11px] text-muted-foreground max-w-[15rem]">{r.email}</span>
+                        {r.explicitCompany && (
+                          <span className="hidden sm:inline truncate text-[10px] text-muted-foreground/80 max-w-[8rem]">{r.explicitCompany}</span>
+                        )}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => remove(r.email)}
+                        aria-label={`Remove ${r.email}`}
+                        title={`Remove ${r.email}`}
+                        className="h-5 w-5 shrink-0 rounded-full flex items-center justify-center text-muted-foreground transition-colors hover:bg-rose-100 hover:text-rose-600 dark:hover:bg-rose-500/20 dark:hover:text-rose-300 cursor-pointer"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {rows.length > VISIBLE_LIMIT && (
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  Showing the newest {VISIBLE_LIMIT}. Use the filter above to find someone, or switch to Table view for the full list.
+                </p>
+              )}
+            </div>
+          ) : (
           <div className="max-h-80 overflow-y-auto scroll-thin">
             <table className="w-full text-sm">
               <thead className="sticky top-0 z-10 bg-card">
@@ -540,6 +582,7 @@ export function RecipientPicker({
               </tbody>
             </table>
           </div>
+          )}
 
           <div className="flex items-center justify-between gap-2 flex-wrap border-t px-4 py-2 text-xs text-muted-foreground">
             <span className="tabular-nums">
@@ -584,9 +627,11 @@ export function RecipientPicker({
         <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
           <CheckCircle2 className="h-3.5 w-3.5 mt-px text-emerald-600 dark:text-emerald-400 shrink-0" />
           <span>
-            Names are editable inline — click any name to change it. Blank names fall back to the email address when sending.{' '}
-            <b className="font-medium text-foreground">Fill missing names</b> guesses them instead: jane.doe@acme.com becomes
-            “Jane Doe” and hello@acme.com becomes “Acme Team”.
+            Every recipient is a tag with an <X className="inline h-3 w-3 -mt-0.5" /> to remove it. Switch to{' '}
+            <b className="font-medium text-foreground">Table</b> to edit names and company details inline. Blank names fall back
+            to the email address when sending.{' '}
+            <b className="font-medium text-foreground">Fill missing names</b> guesses them instead — dotted addresses become full names
+            and generic hello@ addresses become the company team.
           </span>
         </p>
       )}

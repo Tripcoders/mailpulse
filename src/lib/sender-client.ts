@@ -10,18 +10,10 @@ import { io, Socket } from 'socket.io-client'
  */
 
 const ENGINE_URL = process.env.ENGINE_URL || 'http://localhost:3003'
-// The socket.io port claims every request (engine.io path '/'), so the HTTP
-// control plane lives on the neighboring port (CONTROL = ENGINE + 1).
-function controlUrlFrom(engineUrl: string): string {
-  try {
-    const u = new URL(engineUrl)
-    const port = u.port ? Number(u.port) + 1 : 3004
-    return `${u.protocol}//${u.hostname}:${port}`
-  } catch {
-    return 'http://localhost:3004'
-  }
-}
-const CONTROL_URL = process.env.ENGINE_CONTROL_URL || controlUrlFrom(ENGINE_URL)
+// The engine serves socket.io and the HTTP control plane (/health,
+// /control/*) on one port, so the control URL defaults to the same origin.
+// ENGINE_CONTROL_URL stays available for unusual split deployments.
+const CONTROL_URL = process.env.ENGINE_CONTROL_URL || ENGINE_URL
 
 let socket: Socket | null = null
 let connecting: Promise<Socket> | null = null

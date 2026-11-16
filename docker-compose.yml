@@ -19,7 +19,7 @@ services:
       UPLOAD_DIR: "/data/upload"
       SECRET_KEY_PATH: "/data/db/secret.key"
       ENGINE_URL: "http://engine:3003"
-      ENGINE_CONTROL_URL: "http://engine:3004"
+      ENGINE_CONTROL_URL: "http://engine:3003"
     volumes:
       - ./docker-data/db:/data/db
       - ./docker-data/upload:/data/upload
@@ -38,17 +38,16 @@ services:
     restart: unless-stopped
     expose:
       - "3003"
-      - "3004"
     environment:
       DATABASE_URL: "file:/data/db/mailpulse.db"
       UPLOAD_DIR: "/data/upload"
       PORT: "3003"
-      CONTROL_PORT: "3004"
+      SOCKET_PATH: "/engine/socket"
     volumes:
       - ./docker-data/db:/data/db
       - ./docker-data/upload:/data/upload
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://engine:3004/health >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://engine:3003/health >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5

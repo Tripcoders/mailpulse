@@ -3,13 +3,12 @@ services:
     name: mailpulse-engine
     env: docker
     dockerfilePath: ./Dockerfile.engine
+    plan: free
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
         sync: false
       - key: PORT
         value: "3003"
-      - key: CONTROL_PORT
-        value: "3004"
       - key: UPLOAD_DIR
         value: /tmp/upload

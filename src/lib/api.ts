@@ -78,6 +78,7 @@ export const api = {
   clearDraft: () => http<{ ok: boolean }>('/api/wizard/draft', { method: 'DELETE' }),
   listProfiles: () => http<{ profiles: any[] }>('/api/smtp/profiles'),
   saveProfile: (p: any) => http<{ profile: any }>('/api/smtp/profiles', { method: 'POST', body: JSON.stringify(p) }),
+  updateProfile: (p: any) => http<{ profile: any }>('/api/smtp/profiles', { method: 'PATCH', body: JSON.stringify(p) }),
   deleteProfile: (id: string) => http<{ ok: boolean }>(`/api/smtp/profiles?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
   getSettings: () => http<{ settings: Record<string, any> }>('/api/settings'),
   saveSettings: (settings: Record<string, unknown>) => http<{ ok: boolean }>('/api/settings', { method: 'PUT', body: JSON.stringify(settings) }),
@@ -102,8 +103,10 @@ export const api = {
     http<{ signature: any }>('/api/signatures', { method: 'POST', body: JSON.stringify(payload) }),
   deleteSignature: (id: string) => http<{ ok: boolean }>(`/api/signatures?id=${id}`, { method: 'DELETE' }),
   listTemplates: () => http<{ templates: any[] }>('/api/templates'),
-  saveTemplate: (payload: { name: string; subject: string; body: string }) =>
+  saveTemplate: (payload: { name?: string; subject: string; body: string; signatureText?: string; signatureImage?: string }) =>
     http<{ template: any }>('/api/templates', { method: 'POST', body: JSON.stringify(payload) }),
-  deleteTemplate: (id: string) => http<{ ok: boolean }>(`/api/templates?id=${id}`, { method: 'DELETE' }),
+  updateTemplate: (payload: { id: string; name?: string; subject?: string; body?: string; signatureText?: string; signatureImage?: string }) =>
+    http<{ template: any }>('/api/templates', { method: 'PATCH', body: JSON.stringify(payload) }),
+  deleteTemplate: (id: string) => http<{ ok: boolean }>(`/api/templates?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
   testSmtp: (payload: any) => http<{ ok: boolean; message?: string; error?: string }>('/api/smtp/test', { method: 'POST', body: JSON.stringify(payload) }),
 }

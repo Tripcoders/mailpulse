@@ -17,6 +17,7 @@ import {
   IconColorPicker,
   IconChevronLeft, IconChevronRight, IconMailCheck, IconMailX, IconPlus, IconHistory,
   IconSun, IconMoon, IconChartBar, IconLoader, IconClipboardText, IconUserPlus, IconBuilding,
+  IconTag, IconListDetails,
 } from '@tabler/icons-react'
 
 // Friendly names (lucide-style) → Tabler
@@ -78,6 +79,8 @@ export const Loader = IconLoader
 export const ClipboardText = IconClipboardText
 export const UserPlus = IconUserPlus
 export const Building = IconBuilding
+export const Tag = IconTag
+export const ListIcon = IconListDetails
 
 type IconType = ComponentType<{ className?: string; size?: number | string; stroke?: number | string }>
 

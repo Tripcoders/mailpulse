@@ -102,12 +102,15 @@ model Signature {
 }
 
 model EmailTemplate {
-  id            String   @id @default(cuid())
-  name          String
-  subject       String
-  body          String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String   @id @default(cuid())
+  name           String
+  subject        String
+  body           String
+  // Optional signature snapshot so a saved email restores exactly as written.
+  signatureText  String?
+  signatureImage String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@index([createdAt])
 }
