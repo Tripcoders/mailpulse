@@ -628,16 +628,24 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
           filename: a.filename, filepath: a.filepath, mimetype: a.mimetype, size: a.size,
         })),
       })
-      toast.success('Campaign created. Starting send engine…')
-      if (smtpUser && smtpPass) {
-        await api.startSession(session.id, smtpUser, smtpPass)
-        persistProfile()
-      } else {
-        await api.startSessionWithProfile(session.id, selectedProfileId!)
-      }
-      // Launch clears the draft — the campaign itself is now the durable record.
+      // The campaign exists in the database now, so it is the durable record.
+      // Release the wizard draft even if starting the engine fails — otherwise
+      // "Unfinished campaign found" reappears next visit next to the campaign.
       api.clearDraft().catch(() => {})
       api.saveSettings({ lastCampaign: { providerType, batchSize, batchDelayMs, perEmailDelayMs } }).catch(() => {})
+      toast.success('Campaign created. Starting send engine…')
+      try {
+        if (smtpUser && smtpPass) {
+          await api.startSession(session.id, smtpUser, smtpPass)
+          persistProfile()
+        } else {
+          await api.startSessionWithProfile(session.id, selectedProfileId!)
+        }
+      } catch (startError: any) {
+        // Do not strand the user on the wizard: the campaign is saved and the
+        // session view can retry with "Restart with credentials".
+        toast.error(startError.message || 'Campaign created, but the send engine could not start. Retry from the campaign view.')
+      }
       onLaunched(session.id)
     } catch (e: any) {
       toast.error(e.message || 'Failed to launch campaign')
