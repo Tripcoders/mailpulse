@@ -51,7 +51,7 @@ const httpServer = createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
 
-  const writeOk = (data: any = { ok: true }) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)) }
+  const writeOk = (data: any = { ok: true }, status = 200) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)) }
   const writeErr = (msg: string, code = 400) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: msg })) }
 
   try {
@@ -68,13 +68,16 @@ const httpServer = createServer(async (req, res) => {
 
       if (req.url?.startsWith('/control/start')) {
         if (!payload?.sessionId || !payload?.smtpUser || !payload?.smtpPass) return writeErr('sessionId, smtpUser and smtpPass are required', 400)
-        await startSession(payload)
-        return writeOk()
+        void startSession(payload).catch((e) => console.error('start error:', e))
+        return writeOk({ ok: true, accepted: true }, 202)
       }
       if (req.url?.startsWith('/control/pause')) { pauseSession(payload.sessionId); return writeOk() }
       if (req.url?.startsWith('/control/resume')) { resumeSession(payload.sessionId); return writeOk() }
       if (req.url?.startsWith('/control/cancel')) { cancelSession(payload.sessionId); return writeOk() }
-      if (req.url?.startsWith('/control/resend')) { await resendFailed(payload.sessionId); return writeOk() }
+      if (req.url?.startsWith('/control/resend')) {
+        void resendFailed(payload.sessionId).catch((e) => console.error('resend error:', e))
+        return writeOk({ ok: true, accepted: true }, 202)
+      }
     }
   } catch (e: any) {
     return writeErr(e?.message || 'Engine error', 500)
