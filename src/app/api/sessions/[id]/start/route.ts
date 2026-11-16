@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { decryptSecret } from '@/lib/crypto'
 import { startSession } from '@/lib/sender-client'
+import { normalizeSmtpPassword } from '@/lib/smtp'
+import type { ProviderType } from '@/lib/types'
 
 export const runtime = 'nodejs'
 
@@ -25,6 +27,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await db.smtpProfile.update({ where: { id: profile.id }, data: { lastUsedAt: new Date() } }).catch(() => {})
   }
 
+  if (!smtpUser || !smtpPass) {
+    return NextResponse.json({ error: 'SMTP user and password (app password) are required' }, { status: 400 })
+  }
+
+  smtpUser = String(smtpUser).trim()
+  smtpPass = normalizeSmtpPassword(session.providerType as ProviderType, String(smtpPass))
   if (!smtpUser || !smtpPass) {
     return NextResponse.json({ error: 'SMTP user and password (app password) are required' }, { status: 400 })
   }

@@ -9,11 +9,12 @@ import { io, Socket } from 'socket.io-client'
  * difference — that's the point.
  */
 
-const ENGINE_URL = process.env.ENGINE_URL || 'http://localhost:3003'
+const trimTrailingSlashes = (url: string) => url.trim().replace(/\/+$/, '')
+const ENGINE_URL = trimTrailingSlashes(process.env.ENGINE_URL || 'http://localhost:3003')
 // The engine serves socket.io and the HTTP control plane (/health,
 // /control/*) on one port, so the control URL defaults to the same origin.
 // ENGINE_CONTROL_URL stays available for unusual split deployments.
-const CONTROL_URL = process.env.ENGINE_CONTROL_URL || ENGINE_URL
+const CONTROL_URL = trimTrailingSlashes(process.env.ENGINE_CONTROL_URL || ENGINE_URL)
 
 let socket: Socket | null = null
 let connecting: Promise<Socket> | null = null
@@ -56,12 +57,12 @@ function getSocket(): Promise<Socket> {
   return connecting
 }
 
-async function postEngine(path: string, payload?: any): Promise<any> {
+async function postEngine(path: string, payload?: any, timeoutMs = 10000): Promise<any> {
   const res = await fetch(`${CONTROL_URL}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload || {}),
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(timeoutMs),
   })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
@@ -94,7 +95,7 @@ export async function startSession(sessionId: string, smtpUser: string, smtpPass
   } catch (socketErr: any) {
     // Fallback: HTTP control endpoint
     try {
-      await postEngine('/control/start', { sessionId, smtpUser, smtpPass })
+      await postEngine('/control/start', { sessionId, smtpUser, smtpPass }, 25000)
       return
     } catch (httpErr: any) {
       throw new Error(

@@ -18,8 +18,8 @@ function getKey(): Buffer {
     cachedKey = scryptSync(SECRET, 'mailpulse-salt-v1', 32)
     return cachedKey
   }
-  if (existsSync(KEY_PATH)) {
-    cachedKey = scryptSync(readFileSync(KEY_PATH, 'utf8').trim(), 'mailpulse-salt-v1', 32)
+  if (existsSync(/*turbopackIgnore: true*/ KEY_PATH)) {
+    cachedKey = scryptSync(readFileSync(/*turbopackIgnore: true*/ KEY_PATH, 'utf8').trim(), 'mailpulse-salt-v1', 32)
   } else {
     const raw = randomBytes(32).toString('hex')
     try {

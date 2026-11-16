@@ -15,10 +15,10 @@ export async function GET() {
     await db.$queryRaw`SELECT 1`
     checks.db = 'ok'
   } catch {
-    checks.db = 'down (read-only FS on Vercel)'
+    checks.db = 'down'
   }
   checks.engine = (await engineHealthy()) ? 'ok' : 'down'
-  const hardDown = checks.db !== 'ok'
+  const hardDown = checks.db !== 'ok' || checks.engine !== 'ok'
   return NextResponse.json(
     { ok: !hardDown, ...(checks) },
     { status: hardDown ? 503 : 200 }
