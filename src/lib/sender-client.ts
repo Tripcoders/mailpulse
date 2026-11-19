@@ -98,9 +98,12 @@ export async function startSession(sessionId: string, smtpUser: string, smtpPass
       await postEngine('/control/start', { sessionId, smtpUser, smtpPass }, 25000)
       return
     } catch (httpErr: any) {
+      console.error('Campaign start handoff failed:', {
+        socketError: socketErr?.message || String(socketErr),
+        httpError: httpErr?.message || String(httpErr),
+      })
       throw new Error(
-        `Send engine unreachable (socket: ${socketErr?.message}; http: ${httpErr?.message}). ` +
-        'Recipient progress is saved — start it and press Restart with credentials.'
+        'Campaign saved, but the send engine did not confirm startup. Check campaign progress before retrying; delivery may be uncertain.'
       )
     }
   }
