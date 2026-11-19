@@ -12,6 +12,7 @@ import { toast } from 'sonner'
 import {
   Plus, Mail, Clock, CheckCircle2, AlertCircle, History,
   Sun, Moon, Search, Zap, ShieldCheck, BarChart3, Send, ColorPicker,
+  Copy, RefreshCw, Sparkles, Server,
 } from '@/components/mailpulse/icons'
 import { useTheme } from 'next-themes'
 import { api } from '@/lib/api'
@@ -19,6 +20,74 @@ import { Wizard } from '@/components/mailpulse/wizard'
 import { SessionView } from '@/components/mailpulse/session-view'
 import { sessionStatusMeta, formatTime } from '@/components/mailpulse/helpers'
 import type { SessionSummary } from '@/lib/types'
+
+type BackendHealth = {
+  ok?: boolean
+  app?: string
+  db?: string
+  engine?: string
+  auth?: string
+  smtpProfileEncryption?: string
+  engineControlAuth?: string
+  checkedAt?: string
+}
+
+type EngineDiagnostics = {
+  status: 'ok' | 'down'
+  code: string
+  message: string
+  configured: boolean
+  controlTokenConfigured: boolean
+  checkedAt: string
+  httpStatus?: number
+  worker?: {
+    database?: string
+    recovery?: string
+    lease?: string
+    controlAuth?: string
+  }
+  repairSteps: string[]
+}
+
+function displayHealthStatus(status?: string) {
+  if (status === 'ok' || status === 'ready' || status === 'held') return 'Ready'
+  if (status === 'down' || status === 'degraded' || status === 'waiting') return 'Down'
+  if (status === 'missing' || status === 'misconfigured') return 'Needs setup'
+  if (status === 'not_checked') return 'Not checked'
+  return 'Checking'
+}
+
+function healthStatusClass(status?: string) {
+  if (status === 'ok' || status === 'ready' || status === 'held') {
+    return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+  }
+  if (status === 'unknown' || status === 'not_checked' || !status) {
+    return 'border-border bg-muted/50 text-muted-foreground'
+  }
+  return 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+}
+
+function createAiRepairBrief(health: BackendHealth | null, diagnostics: EngineDiagnostics | null) {
+  const worker = diagnostics?.worker
+  const lines = [
+    'Help diagnose and repair MailPulse using this redacted backend report.',
+    `Checked at: ${diagnostics?.checkedAt || health?.checkedAt || 'not available'}`,
+    `Application: ${health?.app || 'unknown'}`,
+    `Neon database: ${health?.db || 'unknown'}`,
+    `Sender status: ${diagnostics?.status || health?.engine || 'unknown'}`,
+    `Sender diagnosis: ${diagnostics?.code || 'not_run'} — ${diagnostics?.message || 'No detailed sender probe has run yet.'}`,
+    `Sender URL configured: ${diagnostics?.configured === undefined ? 'not checked' : diagnostics.configured ? 'yes' : 'no'}`,
+    `Worker control token configured: ${diagnostics?.controlTokenConfigured === undefined ? 'not checked' : diagnostics.controlTokenConfigured ? 'yes' : 'no'}`,
+    `Worker readiness: database=${worker?.database || 'not reported'}, recovery=${worker?.recovery || 'not reported'}, lease=${worker?.lease || 'not reported'}, controlAuth=${worker?.controlAuth || 'not reported'}`,
+    'Do not request or expose database URLs, API tokens, SMTP passwords, or recipient addresses. Do not send emails or deploy changes automatically.',
+  ]
+
+  if (diagnostics?.repairSteps.length) {
+    lines.push('Suggested repair steps:', ...diagnostics.repairSteps.map((step, index) => `${index + 1}. ${step}`))
+  }
+
+  return lines.join('\n')
+}
 
 export default function Home() {
   const { theme, setTheme } = useTheme()
@@ -38,18 +107,65 @@ export default function Home() {
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false)
   const [filter, setFilter] = useState('')
   const [showTrash, setShowTrash] = useState(false)
-  const [health, setHealth] = useState<{ db: 'ok' | 'down'; engine: 'ok' | 'down' } | null>(null)
+  const [health, setHealth] = useState<BackendHealth | null>(null)
+  const [engineDiagnostics, setEngineDiagnostics] = useState<EngineDiagnostics | null>(null)
+  const [engineDialogOpen, setEngineDialogOpen] = useState(false)
+  const [checkingDiagnostics, setCheckingDiagnostics] = useState(false)
 
   useEffect(() => { setMounted(true) }, [])
 
   // Stack health indicator — surfaces degraded services before the user hits them
   useEffect(() => {
     let alive = true
-    const tick = () => fetch('/api/health').then((r) => r.json()).then((h) => { if (alive) setHealth(h) }).catch(() => {})
+    const tick = () => fetch('/api/health', { cache: 'no-store' }).then((r) => r.json()).then((h) => {
+      if (alive) setHealth({ ...h, checkedAt: h.checkedAt || new Date().toISOString() })
+    }).catch(() => {})
     tick()
     const i = setInterval(tick, 12000)
     return () => { alive = false; clearInterval(i) }
-  }, [selectedId])
+  }, [])
+
+  const runBackendDiagnostics = useCallback(async (announce = true) => {
+    setCheckingDiagnostics(true)
+    try {
+      const [healthResult, engineResult] = await Promise.all([
+        fetch('/api/health', { cache: 'no-store' }).then(async (response) => response.json().catch(() => null)),
+        fetch('/api/engine/diagnostics', { cache: 'no-store' }).then(async (response) => ({ ok: response.ok, data: await response.json().catch(() => null) })).catch(() => null),
+      ])
+
+      if (healthResult) {
+        setHealth({ ...healthResult, checkedAt: healthResult.checkedAt || new Date().toISOString() })
+      }
+      const diagnostic = engineResult?.data as EngineDiagnostics | null
+      if (diagnostic) {
+        setEngineDiagnostics(diagnostic)
+        setHealth((current) => current
+          ? { ...current, engine: diagnostic.status, checkedAt: diagnostic.checkedAt }
+          : { app: 'unknown', db: 'unknown', engine: diagnostic.status, checkedAt: diagnostic.checkedAt })
+      }
+
+      if (announce) {
+        if (healthResult?.db === 'ok' && diagnostic?.status === 'ok') {
+          toast.success('Backend checks passed. The sender is ready.')
+        } else {
+          toast.error(diagnostic?.message || 'Some backend services still need attention.')
+        }
+      }
+    } catch {
+      if (announce) toast.error('Could not read the backend diagnostics. Try again in a moment.')
+    } finally {
+      setCheckingDiagnostics(false)
+    }
+  }, [])
+
+  const copyAiRepairBrief = async () => {
+    try {
+      await navigator.clipboard.writeText(createAiRepairBrief(health, engineDiagnostics))
+      toast.success('Redacted repair brief copied for your AI assistant.')
+    } catch {
+      toast.error('Clipboard access was blocked. Try copying from the diagnostic details.')
+    }
+  }
 
   const loadSessions = useCallback(async () => {
     try {
@@ -106,6 +222,36 @@ export default function Home() {
   const totalSent = sessions.reduce((a, s) => a + s.sentCount, 0)
   const totalAll = sessions.reduce((a, s) => a + s.totalEmails, 0)
   const activeCount = sessions.filter((s) => s.status === 'running' || s.status === 'paused' || s.status === 'queued').length
+  const diagnosticIsFresh = engineDiagnostics && Date.now() - new Date(engineDiagnostics.checkedAt).getTime() < 30000
+  const visibleEngineStatus = diagnosticIsFresh ? engineDiagnostics.status : health?.engine
+  const headerStatusLabel = !health
+    ? 'Checking services…'
+    : visibleEngineStatus !== 'ok'
+      ? 'Engine down'
+      : health.db !== 'ok'
+        ? 'Database down'
+        : health.auth === 'missing'
+          ? 'Auth setup needed'
+          : health.smtpProfileEncryption === 'missing'
+            ? 'SMTP key missing'
+            : health.engineControlAuth === 'missing'
+              ? 'Engine token missing'
+              : health.ok === false
+                ? 'Backend needs attention'
+                : 'All systems go'
+  const headerStatusReady = Boolean(health?.ok !== false && health?.db === 'ok' && visibleEngineStatus === 'ok')
+  const diagnosticRows = [
+    { label: 'MailPulse app', status: health?.app || 'unknown', detail: 'The web application and health endpoint.' },
+    { label: 'Neon database', status: health?.db || 'unknown', detail: 'Campaign records and worker data store.' },
+    { label: 'Sender engine', status: engineDiagnostics?.status || health?.engine || 'unknown', detail: engineDiagnostics?.message || 'Run diagnostics to get a specific sender failure reason.' },
+    { label: 'Sender URL', status: engineDiagnostics ? engineDiagnostics.configured ? 'ok' : 'missing' : 'not_checked', detail: engineDiagnostics?.configured ? 'A server-side sender URL is configured; its value is never shown here.' : 'No sender URL configuration has been confirmed.' },
+    { label: 'Worker control token', status: engineDiagnostics ? engineDiagnostics.controlTokenConfigured ? 'ok' : 'missing' : health?.engineControlAuth || 'not_checked', detail: 'The app and worker must share the same server-side control token.' },
+    { label: 'Neon Auth', status: health?.auth || 'not_checked', detail: 'Authentication configuration for workspace access.' },
+    { label: 'SMTP encryption key', status: health?.smtpProfileEncryption || 'not_checked', detail: 'Stable server-side key used to encrypt saved sender passwords.' },
+  ]
+  const repairSteps = engineDiagnostics?.repairSteps?.length
+    ? engineDiagnostics.repairSteps
+    : ['Deploy the sender as a persistent service and connect it to the same Neon database as the web app.', 'Set the stable sender URL and matching ENGINE_API_TOKEN in the Vercel app and worker.', 'Wait for the sender /health endpoint to report ready, then verify SMTP and test with an address you control.']
 
   return (
     <>
@@ -118,17 +264,26 @@ export default function Home() {
               <h1 className="font-semibold text-base">Mail Pulse</h1>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2">
-            <div className="hidden lg:flex items-center gap-3 mr-2 text-xs text-muted-foreground">
-              <span
-                title={health ? `App: ok · Database: ${health.db} · Send engine: ${health.engine}` : 'Checking services…'}
-                className="inline-flex items-center gap-1 cursor-help"
+            <div className="flex items-center gap-3 mr-1 text-xs text-muted-foreground">
+              <button
+                type="button"
+                onClick={() => {
+                  setEngineDialogOpen(true)
+                  void runBackendDiagnostics(false)
+                }}
+                aria-haspopup="dialog"
+                aria-expanded={engineDialogOpen}
+                aria-label={`Backend status: ${headerStatusLabel}. Open diagnostics.`}
+                title={engineDiagnostics?.message || `App: ${health?.app || 'checking'} · Database: ${health?.db || 'checking'} · Send engine: ${visibleEngineStatus || 'checking'}`}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-transparent px-1.5 text-xs font-medium text-foreground transition-colors hover:border-border hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-2"
               >
-                <span className={`h-1.5 w-1.5 rounded-full ${!health ? 'bg-muted-foreground' : health.db === 'ok' && health.engine === 'ok' ? 'bg-emerald-500' : 'bg-amber-500'} ${health?.engine === 'ok' && health?.db === 'ok' ? '' : 'mp-pulse'}`} />
-                {health?.db !== 'ok' ? 'DB down' : health?.engine !== 'ok' ? 'Engine down' : 'All systems go'}
-              </span>
-              <span className="inline-flex items-center gap-1"><Zap className="h-3.5 w-3.5 text-amber-500" /> {activeCount} active</span>
-              <span className="inline-flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> {totalSent.toLocaleString()} sent</span>
-              <span className="inline-flex items-center gap-1"><BarChart3 className="h-3.5 w-3.5 text-brand" /> {sessions.length} campaigns</span>
+                <span className={`h-1.5 w-1.5 rounded-full ${!health ? 'bg-muted-foreground' : headerStatusReady ? 'bg-emerald-500' : 'bg-amber-500'} ${headerStatusReady ? '' : 'mp-pulse'}`} />
+                <span className="hidden sm:inline">{headerStatusLabel}</span>
+                <span className="sm:hidden">Status</span>
+              </button>
+              <span className="hidden xl:inline-flex items-center gap-1"><Zap className="h-3.5 w-3.5 text-amber-500" /> {activeCount} active</span>
+              <span className="hidden xl:inline-flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> {totalSent.toLocaleString()} sent</span>
+              <span className="hidden xl:inline-flex items-center gap-1"><BarChart3 className="h-3.5 w-3.5 text-brand" /> {sessions.length} campaigns</span>
             </div>
             <Sheet open={mobileHistoryOpen} onOpenChange={setMobileHistoryOpen}>
               <SheetTrigger asChild>
@@ -419,6 +574,87 @@ export default function Home() {
           <Button className="bg-brand text-white hover:bg-blue-700" onClick={createCampaign}>
             Create & Continue
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    <Dialog
+      open={engineDialogOpen}
+      onOpenChange={setEngineDialogOpen}
+    >
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader className="text-left">
+          <div className="flex items-start gap-3 pr-6">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-300">
+              <Server className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <DialogTitle>Backend diagnostics</DialogTitle>
+              <DialogDescription className="mt-1">
+                Check the app, Neon, and sender worker, then get a safe repair brief.
+              </DialogDescription>
+            </div>
+          </div>
+        </DialogHeader>
+
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          {diagnosticRows.map((row) => (
+            <div key={row.label} className="rounded-xl border bg-background p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium">{row.label}</span>
+                <Badge variant="outline" className={`shrink-0 ${healthStatusClass(row.status)}`}>
+                  {displayHealthStatus(row.status)}
+                </Badge>
+              </div>
+              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{row.detail}</p>
+            </div>
+          ))}
+        </div>
+
+        {engineDiagnostics?.worker && (
+          <div className="rounded-xl border bg-muted/30 p-3">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Server className="h-4 w-4 text-brand" /> Worker readiness report
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+              <span className="rounded-md border bg-background px-2 py-1">Database: {engineDiagnostics.worker.database || 'not reported'}</span>
+              <span className="rounded-md border bg-background px-2 py-1">Recovery: {engineDiagnostics.worker.recovery || 'not reported'}</span>
+              <span className="rounded-md border bg-background px-2 py-1">Lease: {engineDiagnostics.worker.lease || 'not reported'}</span>
+              <span className="rounded-md border bg-background px-2 py-1">Control auth: {engineDiagnostics.worker.controlAuth || 'not reported'}</span>
+            </div>
+          </div>
+        )}
+
+        <section className="space-y-3 rounded-xl border border-brand/20 bg-brand/5 p-4">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Sparkles className="h-4 w-4 text-brand" /> Guided repair plan
+          </div>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            {engineDiagnostics?.message || 'Run diagnostics to identify whether the sender URL, worker process, Neon connection, or control token needs attention.'}
+          </p>
+          <ol className="space-y-2 pl-5 text-sm leading-relaxed text-foreground marker:text-brand">
+            {repairSteps.map((step, index) => <li key={`${index}-${step}`} className="list-decimal">{step}</li>)}
+          </ol>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            This check does not test SMTP credentials or send email. A browser cannot start a remote worker or change Vercel secrets.
+          </p>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Copy the redacted brief into your AI coding assistant to review the backend fix. It contains no URLs, tokens, SMTP passwords, or recipient addresses.
+          </p>
+        </section>
+
+        <DialogFooter className="items-center sm:justify-between">
+          <span className="text-xs text-muted-foreground">
+            Checked {engineDiagnostics?.checkedAt || health?.checkedAt ? new Date(engineDiagnostics?.checkedAt || health?.checkedAt || '').toLocaleTimeString() : 'not yet'}
+          </span>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row">
+            <Button type="button" variant="outline" onClick={copyAiRepairBrief} disabled={!health && !engineDiagnostics}>
+              <Copy className="h-4 w-4" /> Copy AI brief
+            </Button>
+            <Button type="button" onClick={() => runBackendDiagnostics(true)} disabled={checkingDiagnostics}>
+              <RefreshCw className={`h-4 w-4 ${checkingDiagnostics ? 'animate-spin' : ''}`} />
+              {checkingDiagnostics ? 'Checking…' : 'Run checks again'}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
