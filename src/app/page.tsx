@@ -142,15 +142,11 @@ export default function Home() {
       .then(() => {
         // If bootstrap is available, user is not authenticated as owner
         // Try to check session via a simple API call
-        fetch('/api/workspaces', { credentials: 'include' })
+        fetch('/api/auth/me', { credentials: 'include' })
           .then(async (r) => {
             if (!r.ok) { setIsAuthenticated(false); return }
-            const ct = r.headers.get('content-type') || ''
-            if (ct.includes('application/json')) {
-              setIsAuthenticated(true)
-            } else {
-              setIsAuthenticated(false)
-            }
+            const data = await r.json().catch(() => null)
+            setIsAuthenticated(data?.authenticated === true)
           })
           .catch(() => setIsAuthenticated(false))
       })
