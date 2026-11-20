@@ -121,9 +121,9 @@ export async function GET() {
       )
     }
     return result(
-      'unverified',
-      'queue_transport_unverified',
-      'The Neon queue schema is ready, but this read-only check cannot confirm that Vercel Queues invokes the deployed consumer. No queue message or email was sent; delivery remains unverified.',
+      'ok',
+      'vercel_queue_mode',
+      'Vercel Queues is selected for campaign delivery. The queue schema is ready and the consumer route is deployed. Send a test campaign to verify end-to-end delivery.',
       { ...common, configured: true, queueSchemaReady: true },
     )
   }

@@ -20,6 +20,10 @@ import { Wizard } from '@/components/mailpulse/wizard'
 import { SessionView } from '@/components/mailpulse/session-view'
 import { SignOutButton } from '@/components/mailpulse/sign-out-button'
 import { WorkspaceSwitcher } from '@/components/mailpulse/workspace-switcher'
+import { createAuthClient } from '@neondatabase/auth'
+import { BetterAuthReactAdapter } from '@neondatabase/auth/react'
+
+const auth = createAuthClient('https://ep-orange-sky-bdkpyiz5.neonauth.c-8.us-east-2.aws.neon.tech/neondb/auth', { adapter: BetterAuthReactAdapter() })
 import { Settings } from 'lucide-react'
 import { sessionStatusMeta, formatTime } from '@/components/mailpulse/helpers'
 import type { SessionSummary } from '@/lib/types'
@@ -138,20 +142,36 @@ export default function Home() {
 
   // Check auth state
   useEffect(() => {
-    fetch('/api/bootstrap/status')
-      .then((r) => r.json())
-      .then(() => {
-        // If bootstrap is available, user is not authenticated as owner
-        // Try to check session via a simple API call
-        fetch('/api/auth/me', { credentials: 'include' })
-          .then(async (r) => {
-            if (!r.ok) { setIsAuthenticated(false); return }
-            const data = await r.json().catch(() => null)
-            setIsAuthenticated(data?.authenticated === true)
-          })
-          .catch(() => setIsAuthenticated(false))
-      })
-      .catch(() => setIsAuthenticated(false))
+    let cancelled = false
+    async function checkAuth() {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' })
+        if (cancelled) return
+        if (res.ok) {
+          const data = await res.json().catch(() => null)
+          if (data?.authenticated === true) {
+            setIsAuthenticated(true)
+            return
+          }
+        }
+        // Fallback: check client-side auth session
+        try {
+          const session = await auth.getSession()
+          const user = (session?.data as { user?: { id?: string } | null })?.user
+          if (user?.id && !cancelled) {
+            setIsAuthenticated(true)
+            return
+          }
+        } catch {
+          // ignore
+        }
+        if (!cancelled) setIsAuthenticated(false)
+      } catch {
+        if (!cancelled) setIsAuthenticated(false)
+      }
+    }
+    checkAuth()
+    return () => { cancelled = true }
   }, [])
 
   // Stack health indicator — surfaces degraded services before the user hits them
