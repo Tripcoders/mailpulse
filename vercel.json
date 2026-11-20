@@ -1,4 +1,11 @@
 {
   "version": 2,
-  "buildCommand": "npx prisma generate --schema=prisma/schema.postgresql.prisma && next build"
+  "buildCommand": "npx prisma generate --schema=prisma/schema.postgresql.prisma && next build",
+  "env": {
+    "ENGINE_URL": "https://mailpulse-engine.onrender.com",
+    "ENGINE_CONTROL_URL": "https://mailpulse-engine.onrender.com",
+    "NEXT_PUBLIC_ENGINE_URL": "https://mailpulse-engine.onrender.com",
+    "ENGINE_API_TOKEN": "f2bf0ae7a85e7177679037d86294316766c15bd1b51534c081b95c80b632f24a269183ea9c1a34431d540865d945f145",
+    "SECRET_KEY": "233e02325cdaed3face2b7cec3551ed4bde8258b536e335a584690d985ef8545"
+  }
 }
