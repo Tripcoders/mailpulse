@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 const auth = createAuthClient('https://ep-orange-sky-bdkpyiz5.neonauth.c-8.us-east-2.aws.neon.tech/neondb/auth', { adapter: BetterAuthReactAdapter() })
 
@@ -69,7 +70,7 @@ export default function SignInPage() {
       // Show success state before redirecting
       setError('')
       setSubmitting(false)
-      // Brief success feedback
+      toast.success('Successfully signed in! Redirecting to dashboard...')
       const btn = document.querySelector('button[type="submit"]')
       if (btn) btn.textContent = 'Signed in! Redirecting...'
       setTimeout(() => {
@@ -88,14 +89,10 @@ export default function SignInPage() {
     setGoogleSubmitting(true)
     setError('')
     try {
-      const result = await auth.signIn.social({ provider: 'google', callbackURL: window.location.origin + '/auth/callback' })
-      if (result.error) {
-        setError(result.error.message || 'Google sign-in failed. Try again.')
-      }
+      await auth.signIn.social({ provider: 'google', callbackURL: window.location.origin + '/auth/callback' })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error'
       setError(`Google sign-in could not be reached: ${message}`)
-    } finally {
       setGoogleSubmitting(false)
     }
   }

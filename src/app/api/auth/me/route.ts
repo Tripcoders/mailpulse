@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 export async function GET() {
   const auth = getNeonAuth()
   if (!auth) {
-    return NextResponse.json({ authenticated: false }, { status: 200 })
+    return NextResponse.json({ authenticated: false, reason: 'auth_not_configured' }, { status: 200 })
   }
 
   try {
@@ -29,13 +29,13 @@ export async function GET() {
             }
           }
         }
-      } catch {
-        // Non-fatal — workspace enrollment is best-effort
+      } catch (e) {
+        // Non-fatal
       }
       return NextResponse.json({ authenticated: true, email: user.email, emailVerified: user.emailVerified === true }, { status: 200 })
     }
-    return NextResponse.json({ authenticated: false }, { status: 200 })
-  } catch {
-    return NextResponse.json({ authenticated: false }, { status: 200 })
+    return NextResponse.json({ authenticated: false, reason: 'no_user_in_session', debug: JSON.stringify(result?.data) }, { status: 200 })
+  } catch (e) {
+    return NextResponse.json({ authenticated: false, reason: 'exception', error: e instanceof Error ? e.message : 'unknown' }, { status: 200 })
   }
 }

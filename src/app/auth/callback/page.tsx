@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createAuthClient } from '@neondatabase/auth'
 import { BetterAuthReactAdapter } from '@neondatabase/auth/react'
 import { Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 const auth = createAuthClient('https://ep-orange-sky-bdkpyiz5.neonauth.c-8.us-east-2.aws.neon.tech/neondb/auth', { adapter: BetterAuthReactAdapter() })
 
@@ -21,6 +22,7 @@ export default function AuthCallbackPage() {
         if (user?.id) {
           setStatus('success')
           setMessage('Signed in successfully! Redirecting...')
+          toast.success('Successfully signed in! Welcome to MailPulse.')
           setTimeout(() => {
             router.replace('/')
             router.refresh()

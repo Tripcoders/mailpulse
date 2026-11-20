@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { createAuthClient } from '@neondatabase/auth'
 import { BetterAuthReactAdapter } from '@neondatabase/auth/react'
 import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -57,6 +58,7 @@ export default function InitialOwnerPage() {
         if (typeof data.currentWorkspaceId === 'string') {
           window.localStorage.setItem('mailpulse-active-workspace-id', data.currentWorkspaceId)
         }
+        toast.success('Account created successfully! Redirecting to dashboard...')
         router.replace('/')
         router.refresh()
         return
