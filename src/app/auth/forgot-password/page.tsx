@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
-const auth = createAuthClient(process.env.NEXT_PUBLIC_NEON_AUTH_BASE_URL!, { adapter: BetterAuthReactAdapter() })
+const auth = createAuthClient('https://ep-orange-sky-bdkpyiz5.neonauth.c-8.us-east-2.aws.neon.tech/neondb/auth', { adapter: BetterAuthReactAdapter() })
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
