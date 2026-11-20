@@ -4,7 +4,8 @@
   "env": {
     "DATABASE_URL": "postgresql://neondb_owner:npg_Kdf1PJkLx2MC@ep-orange-sky-bdkpyiz5-pooler.c-8.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require",
     "DATABASE_URL_UNPOOLED": "postgresql://neondb_owner:npg_Kdf1PJkLx2MC@ep-orange-sky-bdkpyiz5.c-8.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require",
-    "NEON_AUTH_BASE_URL": "https://ep-orange-sky-bdkpyiz5.neonauth.c-8.us-east-2.aws.neon.tech/neondb/auth",`n    "NEXT_PUBLIC_NEON_AUTH_BASE_URL": "https://ep-orange-sky-bdkpyiz5.neonauth.c-8.us-east-2.aws.neon.tech/neondb/auth",
+    "NEON_AUTH_BASE_URL": "https://ep-orange-sky-bdkpyiz5.neonauth.c-8.us-east-2.aws.neon.tech/neondb/auth",
+    "NEXT_PUBLIC_NEON_AUTH_BASE_URL": "https://ep-orange-sky-bdkpyiz5.neonauth.c-8.us-east-2.aws.neon.tech/neondb/auth",
     "NEON_AUTH_COOKIE_SECRET": "89e39cef2819a73c92288b45d83add008bd07edadc05a354c5a023de863fe9ac0b37c26a1b967b60d3ecda80e2fe57a1",
     "NEON_INITIAL_OWNER_EMAIL": "taytronic416@gmail.com",
     "SECRET_KEY": "233e02325cdaed3face2b7cec3551ed4bde8258b536e335a584690d985ef8545",
