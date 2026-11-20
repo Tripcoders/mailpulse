@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Eye, EyeOff } from 'lucide-react'
 
 const auth = createAuthClient('https://ep-orange-sky-bdkpyiz5.neonauth.c-8.us-east-2.aws.neon.tech/neondb/auth', { adapter: BetterAuthReactAdapter() })
 
@@ -17,6 +18,7 @@ export default function InitialOwnerPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [available, setAvailable] = useState<boolean | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -138,15 +140,26 @@ export default function InitialOwnerPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="owner-password">Password</Label>
-                  <Input
-                    id="owner-password"
-                    type="password"
-                    autoComplete="new-password"
-                    minLength={8}
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    required
-                  />
+                  <div className="relative">
+                    <Input
+                      id="owner-password"
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      minLength={8}
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      required
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      tabIndex={-1}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
                 <Button type="submit" className="w-full" disabled={submitting || available !== true}>
                   {submitting ? 'Setting up…' : 'Create owner account'}
