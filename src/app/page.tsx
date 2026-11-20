@@ -421,6 +421,9 @@ export default function Home() {
                 {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </Button>
             )}
+            <a href="/auth/sign-in" className="inline-flex h-9 items-center justify-center rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+              Sign in
+            </a>
             <SignOutButton />
             <Button size="sm" className="bg-brand text-white hover:bg-blue-700 hidden sm:inline-flex" onClick={newCampaign}>
               <Plus className="h-4 w-4" /> New campaign
