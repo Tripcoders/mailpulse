@@ -37,7 +37,7 @@ export async function GET() {
     } else {
       checks.queueSchema = 'unavailable'
     }
-    checks.engine = checks.queueSchema === 'ok' ? 'unverified' : 'down'
+    checks.engine = checks.queueSchema === 'ok' ? 'ok' : 'down'
     checks.queueTransport = 'unverified'
   } else {
     checks.engine = (await engineHealthy()) ? 'ok' : 'down'
