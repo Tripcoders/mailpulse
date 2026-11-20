@@ -1,5 +1,6 @@
 import { createHmac, createHash, timingSafeEqual } from 'node:crypto'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { describeError, recordDiagnostic } from '@/lib/diagnostic-logger'
 import {
   ACTIVE_WORKSPACE_COOKIE,
   getNeonAuth,
@@ -7,7 +8,7 @@ import {
   INVITE_CLAIM_COOKIE,
 } from '@/lib/neon-auth'
 import { db } from '@/lib/db'
-import { runWithWorkspace, type WorkspaceContext, type WorkspaceRole } from '@/lib/workspace-store'
+import { runWithWorkspace, tryCurrentWorkspaceContext, type WorkspaceContext, type WorkspaceRole } from '@/lib/workspace-store'
 
 const BOOTSTRAP_WORKSPACE_ID = 'mailpulse-bootstrap'
 
@@ -450,6 +451,16 @@ export function withWorkspace<Args extends [Request, ...unknown[]]>(
     try {
       const resolved = await resolveWorkspaceContext(request)
       if (!resolved.ok) {
+        recordDiagnostic({
+          event: 'api_auth_blocked',
+          message: `${request.method} ${new URL(request.url).pathname} blocked: ${resolved.error}`,
+          detail: `code: ${resolved.code}\nstatus: ${resolved.status}`,
+          level: 'warn',
+          source: 'auth',
+          path: new URL(request.url).pathname,
+          method: request.method,
+          status: resolved.status,
+        })
         return NextResponse.json(
           { error: resolved.error, code: resolved.code },
           { status: resolved.status },
@@ -458,6 +469,16 @@ export function withWorkspace<Args extends [Request, ...unknown[]]>(
 
       const requiredRole = mutating ? options.writeRole || 'sender' : options.readRole || 'viewer'
       if (roleLevel(resolved.context.role) < roleLevel(requiredRole)) {
+        recordDiagnostic({
+          event: 'api_role_blocked',
+          message: `${request.method} ${new URL(request.url).pathname} denied by role: ${resolved.context.role}`,
+          level: 'warn',
+          source: 'api',
+          workspaceId: resolved.context.workspaceId,
+          path: new URL(request.url).pathname,
+          method: request.method,
+          status: 403,
+        })
         return NextResponse.json(
           { error: 'Your workspace role does not allow this action.', code: 'insufficient_workspace_role' },
           { status: 403 },
@@ -465,6 +486,20 @@ export function withWorkspace<Args extends [Request, ...unknown[]]>(
       }
 
       const response = await runWithWorkspace(resolved.context, () => handler(...args))
+      if (response.status >= 400) {
+        const body = await response.clone().text().catch(() => '')
+        recordDiagnostic({
+          event: 'api_error_response',
+          message: `${request.method} ${new URL(request.url).pathname} returned ${response.status}: ${body.slice(0, 600)}`,
+          level: response.status >= 500 ? 'error' : 'warn',
+          source: 'api',
+          workspaceId: resolved.context.workspaceId,
+          detail: body.slice(0, 4000),
+          path: new URL(request.url).pathname,
+          method: request.method,
+          status: response.status,
+        })
+      }
       response.headers.set('Cache-Control', 'private, no-store, max-age=0')
       if (resolved.persistWorkspaceSelection) {
         persistWorkspaceSelectionCookie(response, resolved.context)
@@ -472,7 +507,20 @@ export function withWorkspace<Args extends [Request, ...unknown[]]>(
       if (resolved.clearInviteClaim) expireInviteClaimCookie(response)
       return response
     } catch (error) {
-      console.error('workspace request failed', error instanceof Error ? error.name : 'UnknownError')
+      const { message, detail } = describeError(error)
+      const context = tryCurrentWorkspaceContext()
+      recordDiagnostic({
+        event: 'api_unhandled_error',
+        message: `${request.method} ${new URL(request.url).pathname} threw: ${message}`,
+        detail,
+        level: 'error',
+        source: 'api',
+        workspaceId: context?.workspaceId ?? null,
+        path: new URL(request.url).pathname,
+        method: request.method,
+        status: 503,
+      })
+      console.error('workspace request failed', error)
       return NextResponse.json(
         { error: 'The workspace request could not be completed.' },
         { status: 503 },

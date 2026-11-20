@@ -1,7 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { describeError, logDiagnostic } from '@/lib/diagnostic-logger'
 import { withWorkspace } from '@/lib/workspace-context'
 import { currentWorkspaceContext } from '@/lib/workspace-store'
+
+// Safe summary of a create request — never includes email body, signatures,
+// attachment bytes or credentials.
+function summarizeCreateBody(body: any) {
+  if (!body || typeof body !== 'object') return 'body: <not an object>'
+  return [
+    `name: ${String(body.name ?? '').slice(0, 80)}`,
+    `fromEmail: ${String(body.fromEmail ?? '').slice(0, 120)}`,
+    `providerType: ${String(body.providerType ?? '').slice(0, 40)}`,
+    `smtpHost: ${String(body.smtpHost ?? '').slice(0, 120)}`,
+    `smtpPort: ${String(body.smtpPort ?? '')}`,
+    `subject length: ${String(body.subject ?? '').length}`,
+    `bodyHtml length: ${String(body.bodyHtml ?? '').length}`,
+    `recipients: ${Array.isArray(body.recipients) ? body.recipients.length : 'not an array'}`,
+    `attachments: ${Array.isArray(body.attachments) ? body.attachments.length : 'not an array'}`,
+    `batchSize: ${String(body.batchSize ?? '')}`,
+    `batchDelayMs: ${String(body.batchDelayMs ?? '')}`,
+  ].join('\n')
+}
 
 export const runtime = 'nodejs'
 
@@ -30,8 +50,9 @@ export const GET = withWorkspace(async (req: NextRequest) => {
 })
 
 export const POST = withWorkspace(async (req: NextRequest) => {
+  let body: any = {}
   try {
-    const body = await req.json()
+    body = await req.json()
     const {
       name, color, category, fromName, fromEmail,
       providerType, smtpHost, smtpPort, smtpSecure,
@@ -184,7 +205,21 @@ export const POST = withWorkspace(async (req: NextRequest) => {
 
     return NextResponse.json({ session: result.session })
   } catch (error) {
-    console.error('Create campaign failed:', error instanceof Error ? error.name : 'UnknownError')
+    const { message, detail } = describeError(error, 'Unknown campaign creation error')
+    let workspaceId: string | null = null
+    try { workspaceId = currentWorkspaceContext().workspaceId } catch { /* context may be unavailable */ }
+    await logDiagnostic({
+      event: 'campaign_create_failed',
+      message: `Campaign creation failed: ${message}`,
+      detail: `${detail}\n\n--- REQUEST SUMMARY ---\n${summarizeCreateBody(body)}`,
+      level: 'error',
+      source: 'api',
+      workspaceId,
+      path: '/api/sessions',
+      method: 'POST',
+      status: 500,
+    })
+    console.error('Create campaign failed:', error)
     if (error instanceof Error && error.message === 'ATTACHMENT_CLAIM_RACE') {
       return NextResponse.json({ error: 'An attachment was already used by another campaign. Upload it again to continue.' }, { status: 409 })
     }

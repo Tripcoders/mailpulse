@@ -6,6 +6,7 @@ import { smtpVerificationError } from '@/lib/smtp'
 import { buildCampaignMessage, createCampaignTransporter, type CampaignMailSettings } from '@/lib/campaign-smtp'
 import { enqueueCampaignBatch, type CampaignQueueMessage } from '@/lib/campaign-queue'
 import { logCampaign } from '@/lib/campaign-queue-service'
+import { describeError, logDiagnostic } from '@/lib/diagnostic-logger'
 
 const LEASE_MS = 6 * 60 * 1000
 const STALE_CLAIM_MS = 6 * 60 * 1000
@@ -466,7 +467,28 @@ async function processCampaignMessage(message: CampaignQueueMessage) {
 export async function handleCampaignQueueMessage(message: unknown) {
   if (!isQueueMessage(message)) {
     console.error('Discarded malformed campaign queue message.')
+    await logDiagnostic({
+      event: 'queue_message_malformed',
+      message: 'Discarded a malformed campaign queue message.',
+      detail: JSON.stringify(message)?.slice(0, 4000),
+      level: 'error',
+      source: 'queue',
+    })
     return
   }
-  await processCampaignMessage(message)
+  try {
+    await processCampaignMessage(message)
+  } catch (error) {
+    const { message: errorMessage, detail } = describeError(error)
+    await logDiagnostic({
+      event: 'queue_worker_crashed',
+      message: `Queue worker failed for session ${message.sessionId}: ${errorMessage}`,
+      detail,
+      level: 'error',
+      source: 'queue',
+      workspaceId: message.workspaceId,
+      path: '/api/queues/campaign-send',
+    })
+    throw error // let Vercel Queues retry
+  }
 }

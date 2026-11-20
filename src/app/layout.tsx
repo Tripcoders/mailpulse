@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
+import { GlobalErrorReporter } from "@/components/mailpulse/global-error-reporter";
 
 // Headings (h1–h6): Plus Jakarta Sans. Everything else: Lato.
 const jakarta = Plus_Jakarta_Sans({
@@ -40,6 +41,7 @@ export default function RootLayout({
         className={`${jakarta.variable} ${lato.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
+          <GlobalErrorReporter />
           {children}
           <Toaster />
           <Sonner position="top-right" richColors closeButton />

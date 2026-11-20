@@ -24,7 +24,7 @@ import {
   History, DuoTile, ColorPicker, Users,
 } from './icons'
 import { RecipientPicker } from './recipient-picker'
-import { api } from '@/lib/api'
+import { api, reportClientIssue } from '@/lib/api'
 import { formatBytes } from './helpers'
 import type { Recipient, StagedAttachment, Signature, EmailTemplate, ProviderType, Suggestion } from '@/lib/types'
 
@@ -757,6 +757,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
       }
       onLaunched(session.id)
     } catch (e: any) {
+      reportClientIssue('campaign_launch_failed', e?.message || 'Failed to launch campaign', e?.stack)
       toast.error(e.message || 'Failed to launch campaign')
     } finally {
       setLaunching(false)

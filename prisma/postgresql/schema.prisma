@@ -229,6 +229,27 @@ model SendLog {
   @@index([workspaceId, createdAt])
 }
 
+// Application-wide diagnostic log. Unlike SendLog, this is NOT tied to a
+// campaign session, so it can record failures that happen before a campaign
+// exists (creation, auth, database, queue, client errors, etc.).
+model AppLog {
+  id          String   @id @default(cuid())
+  workspaceId String?
+  source      String   @default("server") // api | client | queue | auth
+  level       String   @default("error")  // error | warn | info
+  event       String
+  message     String   @db.Text
+  detail      String?  @db.Text
+  path        String?
+  method      String?
+  status      Int?
+  createdAt   DateTime @default(now())
+
+  @@index([workspaceId, createdAt])
+  @@index([createdAt])
+  @@index([level, createdAt])
+}
+
 model Setting {
   id        String   @id @default(cuid())
   workspaceId String

@@ -26,3 +26,8 @@ export function currentWorkspaceContext(): WorkspaceContext {
 export function currentWorkspaceId() {
   return currentWorkspaceContext().workspaceId
 }
+
+/** Non-throwing accessor for best-effort logging in global error handlers. */
+export function tryCurrentWorkspaceContext(): WorkspaceContext | null {
+  return storage.getStore() ?? null
+}

@@ -8,6 +8,53 @@ import type { Suggestion } from './types'
 
 type HttpOptions = RequestInit & { timeoutMs?: number; retries?: number; skipWorkspace?: boolean }
 
+// Best-effort reporting of browser-side failures to the persistent diagnostic
+// log. Fire-and-forget; never throws and never reports the logger itself.
+export function reportClientIssue(event: string, message: string, detail?: string) {
+  if (typeof window === 'undefined') return
+  try {
+    void fetch('/api/diagnostics/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: event.slice(0, 120),
+        message: message.slice(0, 4000),
+        detail,
+        level: 'error',
+        source: 'client',
+        path: window.location.pathname,
+      }),
+      keepalive: true,
+    }).catch(() => {})
+  } catch {
+    // ignore
+  }
+}
+
+function reportClientError(url: string, method: string, error: unknown, status?: number) {
+  if (typeof window === 'undefined' || url.includes('/api/diagnostics/')) return
+  try {
+    const message = error instanceof Error ? error.message : String(error)
+    const detail = error instanceof Error ? error.stack : undefined
+    void fetch('/api/diagnostics/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: 'client_request_failed',
+        message: `${method} ${url} failed${status ? ` (${status})` : ''}: ${message}`,
+        detail,
+        level: status && status >= 500 ? 'error' : 'warn',
+        path: url,
+        method,
+        status: status ?? null,
+      }),
+      keepalive: true,
+    }).catch(() => {})
+  } catch {
+    // ignore
+  }
+}
+
 async function once<T>(url: string, options: HttpOptions, signal: AbortSignal): Promise<T> {
   const { skipWorkspace, ...requestOptions } = options
   const headers: Record<string, string> = {
@@ -23,7 +70,10 @@ async function once<T>(url: string, options: HttpOptions, signal: AbortSignal): 
   const res = await fetch(url, { ...requestOptions, headers, signal })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
-    throw new Error((data as any)?.error || `Request failed (${res.status})`)
+    const message = (data as any)?.error || `Request failed (${res.status})`
+    const error = new Error(message) as Error & { status?: number }
+    error.status = res.status
+    throw error
   }
   return data as T
 }
@@ -44,9 +94,12 @@ async function http<T>(url: string, options?: HttpOptions): Promise<T> {
       lastError = e
       // Only network/abort failures retry; server 4xx/5xx answers surface as-is
       const retriable = e?.name === 'AbortError' || /fetch|network|aborted/i.test(String(e?.message))
-      if (!retriable || attempt === retries) throw e?.name === 'AbortError'
-        ? new Error(`Request timed out after ${timeoutMs / 1000}s`)
-        : e
+      if (!retriable || attempt === retries) {
+        reportClientError(url, method, e, e?.status)
+        throw e?.name === 'AbortError'
+          ? new Error(`Request timed out after ${timeoutMs / 1000}s`)
+          : e
+      }
     } finally {
       clearTimeout(timer)
     }

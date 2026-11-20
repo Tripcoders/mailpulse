@@ -23,7 +23,7 @@ import { WorkspaceSwitcher } from '@/components/mailpulse/workspace-switcher'
 import { createAuthClient } from '@neondatabase/auth/next'
 
 const auth = createAuthClient()
-import { Settings } from 'lucide-react'
+import { Settings, ScrollText } from 'lucide-react'
 import { sessionStatusMeta, formatTime } from '@/components/mailpulse/helpers'
 import type { SessionSummary } from '@/lib/types'
 
@@ -461,9 +461,14 @@ export default function Home() {
               </Button>
             )}
             {isAuthenticated && (
-              <a href="/settings" className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Settings">
-                <Settings className="h-4 w-4" />
-              </a>
+              <>
+                <a href="/logs" className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Application logs">
+                  <ScrollText className="h-4 w-4" />
+                </a>
+                <a href="/settings" className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Settings">
+                  <Settings className="h-4 w-4" />
+                </a>
+              </>
             )}
             {isAuthenticated ? (
               <SignOutButton />
