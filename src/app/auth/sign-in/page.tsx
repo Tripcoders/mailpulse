@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff, Loader2 } from 'lucide-react'
 
 const auth = createAuthClient('https://ep-orange-sky-bdkpyiz5.neonauth.c-8.us-east-2.aws.neon.tech/neondb/auth', { adapter: BetterAuthReactAdapter() })
 
@@ -55,11 +55,27 @@ export default function SignInPage() {
     try {
       const result = await auth.signIn.email({ email: email.trim(), password })
       if (result.error) {
-        setError(result.error.message || 'Could not sign in. Check your email and password.')
+        const msg = result.error.message || ''
+        if (msg.toLowerCase().includes('not found') || msg.toLowerCase().includes('does not exist') || msg.toLowerCase().includes('user not found') || msg.toLowerCase().includes('invalid')) {
+          setError('No account found with this email. Create an account first.')
+          if (bootstrapAvailable) {
+            setTimeout(() => router.push('/auth/initial-owner'), 2000)
+          }
+        } else {
+          setError(msg || 'Could not sign in. Check your email and password.')
+        }
         return
       }
-      router.replace(getNextPath())
-      router.refresh()
+      // Show success state before redirecting
+      setError('')
+      setSubmitting(false)
+      // Brief success feedback
+      const btn = document.querySelector('button[type="submit"]')
+      if (btn) btn.textContent = 'Signed in! Redirecting...'
+      setTimeout(() => {
+        router.replace(getNextPath())
+        router.refresh()
+      }, 800)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error'
       setError(`The sign-in service could not be reached: ${message}`)
@@ -72,7 +88,7 @@ export default function SignInPage() {
     setGoogleSubmitting(true)
     setError('')
     try {
-      const result = await auth.signIn.social({ provider: 'google', callbackURL: window.location.origin + getNextPath() })
+      const result = await auth.signIn.social({ provider: 'google', callbackURL: window.location.origin + '/auth/callback' })
       if (result.error) {
         setError(result.error.message || 'Google sign-in failed. Try again.')
       }
@@ -174,7 +190,12 @@ export default function SignInPage() {
                 </div>
               </div>
               <Button type="submit" className="w-full" disabled={submitting || googleSubmitting}>
-                {submitting ? 'Signing in...' : 'Sign in'}
+                {submitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Signing in...
+                  </>
+                ) : 'Sign in'}
               </Button>
             </form>
             <p className="mt-5 text-center text-sm text-muted-foreground">

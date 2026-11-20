@@ -20,6 +20,7 @@ import { Wizard } from '@/components/mailpulse/wizard'
 import { SessionView } from '@/components/mailpulse/session-view'
 import { SignOutButton } from '@/components/mailpulse/sign-out-button'
 import { WorkspaceSwitcher } from '@/components/mailpulse/workspace-switcher'
+import { Settings } from 'lucide-react'
 import { sessionStatusMeta, formatTime } from '@/components/mailpulse/helpers'
 import type { SessionSummary } from '@/lib/types'
 
@@ -439,6 +440,11 @@ export default function Home() {
               <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
                 {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </Button>
+            )}
+            {isAuthenticated && (
+              <a href="/settings" className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Settings">
+                <Settings className="h-4 w-4" />
+              </a>
             )}
             {isAuthenticated ? (
               <SignOutButton />
