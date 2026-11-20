@@ -112,6 +112,7 @@ function createAiRepairBrief(health: BackendHealth | null, diagnostics: EngineDi
 export default function Home() {
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [view, setView] = useState<'wizard' | 'session'>('wizard')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [wizardKey, setWizardKey] = useState(0)
@@ -133,6 +134,28 @@ export default function Home() {
   const [checkingDiagnostics, setCheckingDiagnostics] = useState(false)
 
   useEffect(() => { setMounted(true) }, [])
+
+  // Check auth state
+  useEffect(() => {
+    fetch('/api/bootstrap/status')
+      .then((r) => r.json())
+      .then(() => {
+        // If bootstrap is available, user is not authenticated as owner
+        // Try to check session via a simple API call
+        fetch('/api/workspaces', { credentials: 'include' })
+          .then(async (r) => {
+            if (!r.ok) { setIsAuthenticated(false); return }
+            const ct = r.headers.get('content-type') || ''
+            if (ct.includes('application/json')) {
+              setIsAuthenticated(true)
+            } else {
+              setIsAuthenticated(false)
+            }
+          })
+          .catch(() => setIsAuthenticated(false))
+      })
+      .catch(() => setIsAuthenticated(false))
+  }, [])
 
   // Stack health indicator — surfaces degraded services before the user hits them
   useEffect(() => {
@@ -421,10 +444,13 @@ export default function Home() {
                 {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </Button>
             )}
-            <a href="/auth/sign-in" className="inline-flex h-9 items-center justify-center rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-              Sign in
-            </a>
-            <SignOutButton />
+            {isAuthenticated ? (
+              <SignOutButton />
+            ) : (
+              <a href="/auth/sign-in" className="inline-flex h-9 items-center justify-center rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                Sign in
+              </a>
+            )}
             <Button size="sm" className="bg-brand text-white hover:bg-blue-700 hidden sm:inline-flex" onClick={newCampaign}>
               <Plus className="h-4 w-4" /> New campaign
             </Button>
