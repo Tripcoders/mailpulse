@@ -1,1 +1,0 @@
-const { PrismaClient } = require("@prisma/client"); const db = new PrismaClient(); db.$queryRaw`SELECT 1`.then(r => { console.log("DB OK", JSON.stringify(r)); process.exit(0); }).catch(e => { console.error("DB FAIL:", e.message); process.exit(1); });
