@@ -2,15 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createAuthClient } from '@neondatabase/auth'
-import { BetterAuthReactAdapter } from '@neondatabase/auth/react'
+import { createAuthClient } from '@neondatabase/auth/next'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { useTheme } from 'next-themes'
 import { LogOut, Sun, Moon, Monitor, User, Mail, Shield } from 'lucide-react'
 
-const auth = createAuthClient('https://ep-orange-sky-bdkpyiz5.neonauth.c-8.us-east-2.aws.neon.tech/neondb/auth', { adapter: BetterAuthReactAdapter() })
+const auth = createAuthClient()
 
 export default function SettingsPage() {
   const router = useRouter()

@@ -1,12 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { createAuthClient } from '@neondatabase/auth'
-import { BetterAuthReactAdapter } from '@neondatabase/auth/react'
+import { createAuthClient } from '@neondatabase/auth/next'
 import { LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
-const auth = createAuthClient('https://ep-orange-sky-bdkpyiz5.neonauth.c-8.us-east-2.aws.neon.tech/neondb/auth', { adapter: BetterAuthReactAdapter() })
+const auth = createAuthClient()
 
 export function SignOutButton() {
   const [pending, setPending] = useState(false)

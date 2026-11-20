@@ -9,7 +9,7 @@ const publicPages = new Set([
   '/auth/reset-password',
 ])
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   if (publicPages.has(pathname)) return NextResponse.next()
 

@@ -20,10 +20,9 @@ import { Wizard } from '@/components/mailpulse/wizard'
 import { SessionView } from '@/components/mailpulse/session-view'
 import { SignOutButton } from '@/components/mailpulse/sign-out-button'
 import { WorkspaceSwitcher } from '@/components/mailpulse/workspace-switcher'
-import { createAuthClient } from '@neondatabase/auth'
-import { BetterAuthReactAdapter } from '@neondatabase/auth/react'
+import { createAuthClient } from '@neondatabase/auth/next'
 
-const auth = createAuthClient('https://ep-orange-sky-bdkpyiz5.neonauth.c-8.us-east-2.aws.neon.tech/neondb/auth', { adapter: BetterAuthReactAdapter() })
+const auth = createAuthClient()
 import { Settings } from 'lucide-react'
 import { sessionStatusMeta, formatTime } from '@/components/mailpulse/helpers'
 import type { SessionSummary } from '@/lib/types'
