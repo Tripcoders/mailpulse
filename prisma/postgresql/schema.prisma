@@ -199,17 +199,36 @@ model EmailTemplate {
   id             String   @id @default(cuid())
   workspaceId    String
   name           String
+  category       String   @default("General")
   subject        String
   body           String   @db.Text
+  plainText      String?  @db.Text
   // Optional signature snapshot so a saved email restores exactly as written.
   signatureText  String?  @db.Text
   signatureImage String?  @db.Text
+
+  // Full wizard snapshot (JSON). Selecting a template restores every field,
+  // not only the email content: sender, throttling, recipients mode, etc.
+  // Sensitive values inside it (SMTP password) are encrypted at rest.
+  snapshot       String?  @db.Text
+
+  // Optional identifying image for the template (base64 data URL) plus the
+  // label the user gave it. Shown as a thumbnail in the template picker.
+  imageData      String?  @db.Text
+  imageLabel     String?
+
+  // Display fields mirrored from the snapshot for quick reference.
+  fromName       String?
+  fromEmail      String?
+  providerType   String?
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, updatedAt])
+  @@index([workspaceId, category])
 }
 
 model SendLog {

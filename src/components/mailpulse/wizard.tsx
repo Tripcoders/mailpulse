@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -123,6 +123,12 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
   const [saveTplOpen, setSaveTplOpen] = useState(false)
   const [sigName, setSigName] = useState('')
   const [tplName, setTplName] = useState('')
+  const [tplCategory, setTplCategory] = useState('General')
+  const [tplImageData, setTplImageData] = useState('')
+  const [tplImageLabel, setTplImageLabel] = useState('')
+  const [tplIncludeAll, setTplIncludeAll] = useState(true)
+  const tplImageInputRef = useRef<HTMLInputElement>(null)
+  const [pickerValue, setPickerValue] = useState('')
 
   // Step 3: Attachments
   const [attachments, setAttachments] = useState<StagedAttachment[]>([])
@@ -152,10 +158,9 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
   const [rememberPass, setRememberPass] = useState(true)
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null)
   const [savingSender, setSavingSender] = useState(false)
-  const [draftInfo, setDraftInfo] = useState<{ updatedAt: string; content: Record<string, any> } | null>(null)
+  const [autoRestoredAt, setAutoRestoredAt] = useState<string | null>(null)
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [suggestionsOpen, setSuggestionsOpen] = useState(true)
-  const [recovered, setRecovered] = useState(false)
   const bootstrappedRef = useRef(false)
   const draftTimer = useRef<any>(null)
   const suggestTimer = useRef<any>(null)
@@ -165,6 +170,43 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
     api.listSignatures().then((d) => setSignatures(d.signatures as Signature[])).catch(() => {})
     api.listTemplates().then((d) => setTemplates(d.templates as EmailTemplate[])).catch(() => {})
   }, [])
+
+  // Restores EVERY field from a saved snapshot — the live draft or a named
+  // template. Empty strings are assigned too, so a saved blank field clears
+  // the current value instead of leaving stale data behind.
+  const applySnapshot = (c: Record<string, any>) => {
+    if (!c || typeof c !== 'object') return
+    if (typeof c.sessionName === 'string') setSessionName(c.sessionName)
+    if (typeof c.sessionColor === 'string') setSessionColor(c.sessionColor)
+    if (typeof c.sessionCategory === 'string') setSessionCategory(c.sessionCategory)
+    if (Array.isArray(c.recipients)) setRecipients(c.recipients)
+    if (c.csvMeta !== undefined) setCsvMeta(c.csvMeta)
+    if (c.recipientMode === 'csv' || c.recipientMode === 'paste') setRecipientMode(c.recipientMode)
+    if (c.recipientSource === 'csv' || c.recipientSource === 'paste') setRecipientSource(c.recipientSource)
+    else if (Array.isArray(c.recipients) && c.recipients.length > 0) setRecipientSource(c.csvMeta ? 'csv' : 'paste')
+    if (typeof c.pasteText === 'string') setPasteText(c.pasteText)
+    if (typeof c.subject === 'string') setSubject(c.subject)
+    if (typeof c.bodyHtml === 'string') setBodyHtml(c.bodyHtml)
+    if (typeof c.signatureText === 'string') setSignatureText(c.signatureText)
+    if (typeof c.signatureImage === 'string') setSignatureImage(c.signatureImage)
+    if (Array.isArray(c.attachments)) setAttachments(c.attachments)
+    if (typeof c.fromName === 'string') setFromName(c.fromName)
+    if (typeof c.fromEmail === 'string') setFromEmail(c.fromEmail)
+    if (PROVIDERS.some((p) => p.value === c.providerType)) setProviderType(c.providerType as ProviderType)
+    if (typeof c.smtpHost === 'string') setSmtpHost(c.smtpHost)
+    if (typeof c.smtpPort === 'string' || typeof c.smtpPort === 'number') {
+      setSmtpPort(String(c.smtpPort))
+      setSmtpSecure(!!c.smtpSecure)
+    }
+    if (typeof c.smtpUser === 'string') setSmtpUser(c.smtpUser)
+    if (typeof c.smtpPass === 'string') setSmtpPass(c.smtpPass)
+    if (typeof c.rememberPass === 'boolean') setRememberPass(c.rememberPass)
+    setSelectedProfileId(typeof c.selectedProfileId === 'string' ? c.selectedProfileId : null)
+    if (typeof c.batchSize === 'string' || typeof c.batchSize === 'number') setBatchSize(String(c.batchSize))
+    if (typeof c.batchDelayMs === 'string' || typeof c.batchDelayMs === 'number') setBatchDelayMs(String(c.batchDelayMs))
+    if (typeof c.perEmailDelayMs === 'string' || typeof c.perEmailDelayMs === 'number') setPerEmailDelayMs(String(c.perEmailDelayMs))
+    if (typeof c.step === 'number' && c.step >= 0 && c.step < STEPS.length) setStep(c.step)
+  }
 
   // ── Bootstrap: load saved profiles, remembered settings and the auto-saved draft ──
   useEffect(() => {
@@ -214,26 +256,34 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
         if (last.perEmailDelayMs) setPerEmailDelayMs(last.perEmailDelayMs)
       }
 
-      // Unfinished-work draft from a previous run (crash / refresh safe).
+      // Saved work is restored AUTOMATICALLY — no button to press after a
+      // login, logout, refresh or redeploy. Draft values win over sender
+      // defaults because they are the user's latest edits.
       if (draftRes.draft) {
-        try { setDraftInfo({ updatedAt: draftRes.draft.updatedAt, content: JSON.parse(draftRes.draft.content) }) } catch {}
+        try {
+          applySnapshot(JSON.parse(draftRes.draft.content))
+          setAutoRestoredAt(draftRes.draft.updatedAt)
+        } catch {
+          // A corrupt draft must never block a fresh campaign.
+        }
       }
       bootstrappedRef.current = true
     })()
     return () => { alive = false }
   }, [])
 
-  // ── Snapshot of wizard state for autosave/suggestions (never includes the password) ──
+  // ── Full snapshot of every field. The app password is encrypted by the
+  //    server before the snapshot is written to Neon (see form-snapshot.ts).
   const snapshot = () => ({
-    sessionName, sessionColor, sessionCategory, recipients, csvMeta,
+    step, sessionName, sessionColor, sessionCategory, recipients, csvMeta,
     recipientMode, recipientSource, pasteText,
     subject, bodyHtml, signatureText, signatureImage, attachments,
     fromName, fromEmail, providerType, smtpHost, smtpPort, smtpSecure,
-    smtpUser, selectedProfileId,
+    smtpUser, smtpPass, rememberPass, selectedProfileId,
     batchSize, batchDelayMs, perEmailDelayMs,
     savedAt: new Date().toISOString(),
   })
-  const kafkaDeps = [sessionName, sessionColor, sessionCategory, recipients, csvMeta, recipientMode, recipientSource, pasteText, subject, bodyHtml, signatureText, signatureImage, attachments, fromName, fromEmail, providerType, smtpHost, smtpPort, smtpSecure, smtpUser, selectedProfileId, batchSize, batchDelayMs, perEmailDelayMs]
+  const kafkaDeps = [step, sessionName, sessionColor, sessionCategory, recipients, csvMeta, recipientMode, recipientSource, pasteText, subject, bodyHtml, signatureText, signatureImage, attachments, fromName, fromEmail, providerType, smtpHost, smtpPort, smtpSecure, smtpUser, smtpPass, rememberPass, selectedProfileId, batchSize, batchDelayMs, perEmailDelayMs]
 
   // ── Autosave: debounced 1.2s after any change, so a crash/power-cut never
   //    loses work. Runs after initial bootstrap: user edits win over the draft.
@@ -261,57 +311,6 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, kafkaDeps)
   useEffect(() => { refreshSuggestions() }, kafkaDeps)
-
-  // ── Resume / discard the auto-saved draft ──
-  const restoreDraft = async () => {
-    if (!draftInfo?.content) return
-    const c = draftInfo.content
-    try {
-      if (c.sessionName) setSessionName(c.sessionName)
-      if (c.sessionColor) setSessionColor(c.sessionColor)
-      if (c.sessionCategory) setSessionCategory(c.sessionCategory)
-      if (Array.isArray(c.recipients)) setRecipients(c.recipients)
-      if (c.csvMeta) setCsvMeta(c.csvMeta)
-      if (c.recipientMode === 'csv' || c.recipientMode === 'paste') {
-        setRecipientMode(c.recipientMode)
-      } else if (!c.csvMeta && Array.isArray(c.recipients) && c.recipients.length > 0) {
-        setRecipientMode('paste')
-      }
-      if (c.recipientSource === 'csv' || c.recipientSource === 'paste') {
-        setRecipientSource(c.recipientSource)
-      } else if (Array.isArray(c.recipients) && c.recipients.length > 0) {
-        setRecipientSource(c.csvMeta ? 'csv' : 'paste')
-      }
-      if (typeof c.pasteText === 'string') setPasteText(c.pasteText)
-      setSubject(c.subject || '')
-      setBodyHtml(c.bodyHtml || '')
-      setSignatureText(c.signatureText || '')
-      setSignatureImage(c.signatureImage || '')
-      if (Array.isArray(c.attachments)) setAttachments(c.attachments)
-      setFromName(c.fromName || '')
-      setFromEmail(c.fromEmail || '')
-      if (c.providerType) setProviderType(c.providerType)
-      setSmtpUser(c.smtpUser || '')
-      if (c.smtpHost) setSmtpHost(c.smtpHost)
-      if (c.smtpPort) { setSmtpPort(String(c.smtpPort)); setSmtpSecure(!!c.smtpSecure) }
-      if (c.selectedProfileId) setSelectedProfileId(c.selectedProfileId)
-      if (c.batchSize) setBatchSize(c.batchSize)
-      if (c.batchDelayMs) setBatchDelayMs(c.batchDelayMs)
-      if (c.perEmailDelayMs) setPerEmailDelayMs(c.perEmailDelayMs)
-      await api.clearDraft().catch(() => {})
-      setDraftInfo(null)
-      setRecovered(true)
-      toast.success('Progress restored — continue where you left off')
-    } catch {
-      toast.error('Could not restore — starting fresh')
-      setDraftInfo(null)
-    }
-  }
-  const discardDraft = async () => {
-    await api.clearDraft().catch(() => {})
-    setDraftInfo(null)
-    toast.info('Old draft discarded')
-  }
 
   // Apply a suggestion (provider switch / throttle preset / saved profile).
   const applySuggestion = async (s: Suggestion) => {
@@ -492,7 +491,10 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
     // Sender settings are intentionally kept: a saved sender is configuration,
     // not campaign content, and should never need re-entering.
     setSuggestions([])
-    setDraftInfo(null)
+    setAutoRestoredAt(null)
+    setPickerValue('')
+    setTplImageData('')
+    setTplImageLabel('')
     api.clearDraft().catch(() => {})
     setDirection(-1)
     setStep(0)
@@ -632,29 +634,73 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
     }
   }
   const applyTemplate = (t: EmailTemplate) => {
+    // A full snapshot restores the complete form — recipients, sender,
+    // throttles, category, step and the encrypted app password. Older
+    // templates without a snapshot still restore subject/body/signature.
+    if (t.snapshot) {
+      try {
+        const saved = JSON.parse(t.snapshot)
+        // Staged uploads are claimed by a campaign when it is created, so old
+        // staging IDs can never be attached to a new send. Re-upload if needed.
+        saved.attachments = []
+        applySnapshot(saved)
+        setPickerValue(t.id)
+        toast.success(`Loaded "${t.name}" — every field restored`)
+        return
+      } catch {
+        // Fall through to the legacy content-only restore.
+      }
+    }
     setSubject(t.subject || '')
     setBodyHtml(t.body || '')
-    // Restore the signature exactly as it was saved alongside the email.
     setSignatureText(t.signatureText || '')
     setSignatureImage(t.signatureImage || '')
+    setPickerValue(t.id)
     toast.success(`Loaded "${t.name}"`)
+  }
+
+  const onTplImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Template image must be under 2MB')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      setTplImageData(reader.result as string)
+      if (!tplImageLabel) setTplImageLabel(file.name.replace(/\.[^.]+$/, ''))
+      toast.success('Template image added')
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
   }
 
   const saveTemplate = async () => {
     if (!subject.trim() && !bodyHtml.trim()) return toast.error('Write a subject or email body first')
     try {
+      const name = tplName.trim() || subject.trim().slice(0, 60) || 'Untitled email'
       const d = await api.saveTemplate({
-        name: tplName.trim() || subject.trim().slice(0, 60) || 'Untitled email',
+        name,
+        category: tplCategory.trim() || sessionCategory || 'General',
         subject,
         body: bodyHtml,
         signatureText,
         signatureImage,
+        snapshot: tplIncludeAll ? JSON.stringify(snapshot()) : null,
+        imageData: tplImageData || null,
+        imageLabel: tplImageLabel || null,
+        fromName,
+        fromEmail,
+        providerType,
       })
       const list = await api.listTemplates()
       setTemplates(list.templates as EmailTemplate[])
-      toast.success(`Saved "${d.template?.name || tplName || 'email'}" — reusable in every campaign`)
+      toast.success(`Saved "${d.template?.name || name}" — open it any time from the dropdown`)
       setSaveTplOpen(false)
       setTplName('')
+      setTplImageData('')
+      setTplImageLabel('')
     } catch (e: any) {
       toast.error(e.message)
     }
@@ -731,10 +777,13 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
         recipients,
         attachments: attachments.map((a) => ({ stagingId: a.stagingId })),
       })
-      // The campaign exists in the database now, so it is the durable record.
-      // Release the wizard draft even if starting the engine fails — otherwise
-      // "Unfinished campaign found" reappears next visit next to the campaign.
-      api.clearDraft().catch(() => {})
+      // Keep the auto-saved snapshot after launch. The campaign is durable,
+      // but the same filled form is restored on the next visit so a repeat
+      // send never means typing everything again — even if starting failed.
+      // Staged attachments were claimed by this campaign, so drop those IDs
+      // from the reusable snapshot to keep the next launch error-free.
+      window.clearTimeout(draftTimer.current)
+      api.saveDraft({ ...snapshot(), attachments: [] }).catch(() => {})
       api.saveSettings({ lastCampaign: { providerType, batchSize, batchDelayMs, perEmailDelayMs } }).catch(() => {})
       // Save the sender before trying to start, so even an engine outage never
       // costs the user their SMTP configuration again.
@@ -820,6 +869,80 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
 
   return (
     <div className="max-w-5xl mx-auto">
+      {/* Saved setups — one picker available on EVERY step, grouped by category. */}
+      <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-2.5 flex items-center gap-3 flex-wrap text-xs">
+        <span className="inline-flex items-center gap-1.5 font-semibold text-blue-900 shrink-0">
+          <History className="h-4 w-4" /> Saved setups
+        </span>
+        <Select
+          value={pickerValue || undefined}
+          onValueChange={(v) => {
+            const t = templates.find((x) => x.id === v)
+            if (t) applyTemplate(t)
+          }}
+        >
+          <SelectTrigger className="h-8 w-64 bg-background text-xs" aria-label="Load a saved template">
+            <SelectValue placeholder="Choose a saved template…" />
+          </SelectTrigger>
+          <SelectContent>
+            {templates.length === 0 ? (
+              <SelectItem value="_none" disabled>No saved templates yet</SelectItem>
+            ) : (
+              Object.entries(
+                templates.reduce<Record<string, EmailTemplate[]>>((groups, t) => {
+                  const key = t.category || 'General'
+                  ;(groups[key] = groups[key] || []).push(t)
+                  return groups
+                }, {}),
+              ).map(([category, items]) => (
+                <SelectGroup key={category}>
+                  <SelectLabel className="text-[10px] uppercase tracking-wide">{category}</SelectLabel>
+                  {items.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      <span className="flex items-center gap-2">
+                        {t.imageData ? (
+                          <img src={t.imageData} alt="" className="h-4 w-4 rounded object-cover shrink-0" />
+                        ) : (
+                          <FileText className="h-3.5 w-3.5 text-brand shrink-0" />
+                        )}
+                        <span className="truncate">{t.name}</span>
+                        {t.imageLabel && <span className="text-[10px] text-muted-foreground truncate">· {t.imageLabel}</span>}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              ))
+            )}
+          </SelectContent>
+        </Select>
+        <span className="text-[11px] text-blue-900/70 flex-1 min-w-[180px]">
+          Restores every field — recipients, content, sender, throttles and password.
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 text-xs bg-background"
+          onClick={() => { setTplName(subject.trim().slice(0, 60)); setTplCategory(sessionCategory); setSaveTplOpen(true) }}
+        >
+          <Save className="h-3.5 w-3.5" /> Save current setup
+        </Button>
+      </div>
+
+      {/* Auto-restore notice: the user never has to press "Resume" again. */}
+      {autoRestoredAt && (
+        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 flex items-start gap-2 text-xs text-emerald-900">
+          <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <span className="font-semibold">Your saved setup was restored automatically.</span>{' '}
+            Everything from {new Date(autoRestoredAt).toLocaleString()} is back — keep going or hit send again.
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setAutoRestoredAt(null)}>Dismiss</Button>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={resetAll}>Start fresh</Button>
+          </div>
+        </div>
+      )}
+
       {/* Preview-mode banner: every step inspectable without uploading first */}
       <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2.5 flex items-start gap-2 text-xs text-sky-900">
         <Eye className="h-4 w-4 mt-0.5 shrink-0" />
@@ -838,21 +961,6 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
           </Button>
         </div>
       </div>
-
-      {/* Resume banner — auto-saved progress from a previous session (power cut safe) */}
-      {draftInfo && !recovered && (
-        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 flex items-start gap-2 text-xs text-blue-900">
-          <History className="h-4 w-4 mt-0.5 shrink-0" />
-          <div className="flex-1 min-w-0">
-            <span className="font-semibold">Unfinished campaign found — auto-saved {new Date(draftInfo.updatedAt).toLocaleString()}.</span>{' '}
-            Recipients, content and settings are all stored. Resume it instead of starting over.
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <Button size="sm" className="h-7 text-xs bg-brand text-white hover:bg-blue-700" onClick={restoreDraft}>Restore progress</Button>
-            <Button variant="ghost" size="sm" className="h-7 text-xs text-blue-700 hover:text-blue-800" onClick={discardDraft}>Discard</Button>
-          </div>
-        </div>
-      )}
 
       {/* Stepper — slider tabs: click any step to preview. Green check = filled in, not visited. */}
       <div className="mb-2">
@@ -990,7 +1098,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                   <p className="text-sm text-muted-foreground mt-1">Write your message. Use variables to personalize per recipient. Everything previews live on the right.</p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => { setTplName(subject.trim().slice(0, 60)); setSaveTplOpen(true) }}>
+                  <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => { setTplName(subject.trim().slice(0, 60)); setTplCategory(sessionCategory); setSaveTplOpen(true) }}>
                     <Save className="h-3.5 w-3.5" /> Save current email
                   </Button>
                 </div>
@@ -1006,19 +1114,29 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                 </div>
                 {templates.length === 0 ? (
                   <p className="text-[11px] text-muted-foreground mt-2">
-                    Nothing saved yet. Write the email, then press <b className="text-foreground">Save current email</b> once — subject, body and signature are kept together.
+                    Nothing saved yet. Write the email, then press <b className="text-foreground">Save current setup</b> — subject, body, signature, sender, recipients and settings are kept together.
                   </p>
                 ) : (
-                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-44 overflow-y-auto scroll-thin">
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto scroll-thin">
                     {templates.map((t) => (
                       <div key={t.id} className="flex items-stretch rounded-lg border bg-card overflow-hidden">
                         <button
                           onClick={() => applyTemplate(t)}
-                          className="min-w-0 flex-1 text-left px-3 py-2 hover:bg-muted/50 transition-colors"
-                          title={`Load "${t.name}"`}
+                          className="min-w-0 flex-1 text-left px-2 py-2 flex items-center gap-2 hover:bg-muted/50 transition-colors"
+                          title={`Load "${t.name}" with all saved fields`}
                         >
-                          <span className="block text-xs font-medium truncate">{t.name}</span>
-                          <span className="block text-[11px] text-muted-foreground truncate">{t.subject || 'No subject'}</span>
+                          {t.imageData ? (
+                            <img src={t.imageData} alt={t.imageLabel || t.name} className="h-10 w-10 rounded object-cover border shrink-0" />
+                          ) : (
+                            <span className="h-10 w-10 rounded bg-muted flex items-center justify-center shrink-0"><FileText className="h-4 w-4 text-brand" /></span>
+                          )}
+                          <span className="min-w-0">
+                            <span className="block text-xs font-medium truncate">{t.name}</span>
+                            <span className="block text-[11px] text-muted-foreground truncate">{t.subject || 'No subject'}</span>
+                            <span className="block text-[10px] text-brand truncate">
+                              {t.category || 'General'}{t.imageLabel ? ` · ${t.imageLabel}` : ''}{t.snapshot ? ' · full setup' : ''}
+                            </span>
+                          </span>
                         </button>
                         <button
                           className="w-8 shrink-0 flex items-center justify-center text-muted-foreground hover:bg-rose-100 hover:text-rose-600 dark:hover:bg-rose-500/15 transition-colors"
@@ -1651,28 +1769,84 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
         </DialogContent>
       </Dialog>
 
-      {/* Save template dialog */}
+      {/* Save template dialog — stores a full, reusable form snapshot */}
       <Dialog open={saveTplOpen} onOpenChange={setSaveTplOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Save this email for reuse</DialogTitle>
+            <DialogTitle>Save this setup for reuse</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <p className="text-sm text-muted-foreground">
-              Subject, body and signature are saved together in your database. Saved emails load in every new campaign.
+              Saved in your database. Pick it from the dropdown on any step and every field comes back —
+              recipients, subject, HTML, signature, sender, throttles and the password (encrypted at rest).
             </p>
             <p className="text-xs text-muted-foreground">Subject: <b className="text-foreground">{subject || '(none)'}</b></p>
-            <Input
-              value={tplName}
-              onChange={(e) => setTplName(e.target.value)}
-              placeholder="Name this email (defaults to the subject)"
-              onKeyDown={(e) => { if (e.key === 'Enter') saveTemplate() }}
-            />
-            <p className="text-[11px] text-muted-foreground">Saving under an existing name updates that saved email instead of duplicating it.</p>
+            <div>
+              <Label htmlFor="tpl-name">Template name</Label>
+              <Input
+                id="tpl-name"
+                value={tplName}
+                onChange={(e) => setTplName(e.target.value)}
+                placeholder="Name this template (defaults to the subject)"
+                className="mt-1"
+                onKeyDown={(e) => { if (e.key === 'Enter') saveTemplate() }}
+              />
+            </div>
+            <div>
+              <Label htmlFor="tpl-category">Category</Label>
+              <select
+                id="tpl-category"
+                value={tplCategory}
+                onChange={(e) => setTplCategory(e.target.value)}
+                className="mt-1 w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                {['General', 'Newsletter', 'Promotion', 'Announcement', 'Follow-up', 'Event', 'Other'].map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div className="rounded-lg border p-3">
+              <Label className="text-xs">Identifying image (optional)</Label>
+              <div className="mt-2 flex items-center gap-3 flex-wrap">
+                {tplImageData ? (
+                  <img src={tplImageData} alt={tplImageLabel || 'Template'} className="h-14 w-14 rounded object-cover border" />
+                ) : (
+                  <span className="h-14 w-14 rounded bg-muted flex items-center justify-center"><ImageIcon className="h-5 w-5 text-muted-foreground" /></span>
+                )}
+                <input ref={tplImageInputRef} type="file" accept="image/*" className="hidden" onChange={onTplImage} />
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => tplImageInputRef.current?.click()}>
+                    <ImageIcon className="h-3.5 w-3.5" /> {tplImageData ? 'Change image' : 'Upload image'}
+                  </Button>
+                  {tplImageData && (
+                    <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { setTplImageData(''); setTplImageLabel('') }}>
+                      <X className="h-3.5 w-3.5" /> Remove
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div className="mt-3">
+                <Label htmlFor="tpl-image-label" className="text-xs">Image label</Label>
+                <Input
+                  id="tpl-image-label"
+                  value={tplImageLabel}
+                  onChange={(e) => setTplImageLabel(e.target.value)}
+                  placeholder="e.g. Blue newsletter header"
+                  className="mt-1 h-8 text-xs"
+                />
+              </div>
+            </div>
+            <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+              <input type="checkbox" checked={tplIncludeAll} onChange={(e) => setTplIncludeAll(e.target.checked)} className="h-4 w-4 mt-0.5 rounded cursor-pointer" />
+              <span>
+                <b className="text-foreground">Save the complete form</b> — including recipients, sender, app password and throttles, so selecting this template is a one-click resume.
+              </span>
+            </label>
+            <p className="text-[11px] text-muted-foreground">Saving under an existing name updates that template instead of duplicating it.</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSaveTplOpen(false)}>Cancel</Button>
-            <Button onClick={saveTemplate} className="bg-brand text-white hover:bg-blue-700">Save email</Button>
+            <Button onClick={saveTemplate} className="bg-brand text-white hover:bg-blue-700">Save template</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

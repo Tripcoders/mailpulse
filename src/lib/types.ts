@@ -97,10 +97,20 @@ export interface Signature {
 export interface EmailTemplate {
   id: string
   name: string
+  category?: string
   subject: string
   body: string
+  plainText?: string | null
   signatureText?: string | null
   signatureImage?: string | null
+  // JSON wizard snapshot: restores every field, not just subject/body.
+  snapshot?: string | null
+  // Identifying image + the label the user gave it.
+  imageData?: string | null
+  imageLabel?: string | null
+  fromName?: string | null
+  fromEmail?: string | null
+  providerType?: string | null
   createdAt: string
   updatedAt?: string
 }

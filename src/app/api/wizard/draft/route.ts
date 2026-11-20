@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withWorkspace } from '@/lib/workspace-context'
 import { currentWorkspaceId } from '@/lib/workspace-store'
+import { sealFormSnapshot, unsealFormSnapshot } from '@/lib/form-snapshot'
 
 export const runtime = 'nodejs'
 
@@ -10,7 +11,11 @@ export const GET = withWorkspace(async (_req: NextRequest) => {
   try {
     const draftId = currentWorkspaceId() + ':main'
     const draft = await db.wizardDraft.findUnique({ where: { id: draftId } })
-    return NextResponse.json({ draft: draft ? { content: draft.content, updatedAt: draft.updatedAt } : null })
+    // Sealed on write, unsealed on read: the database never holds a plaintext
+    // app password, but a returning user gets their whole form back.
+    return NextResponse.json({
+      draft: draft ? { content: unsealFormSnapshot(draft.content), updatedAt: draft.updatedAt } : null,
+    })
   } catch (e: any) {
     console.error('draft get error', e)
     return NextResponse.json({ draft: null })
@@ -25,10 +30,11 @@ export const PUT = withWorkspace(async (req: NextRequest) => {
       return NextResponse.json({ error: 'Invalid draft payload' }, { status: 400 })
     }
     const draftId = currentWorkspaceId() + ':main'
+    const sealed = sealFormSnapshot(content)
     await db.wizardDraft.upsert({
       where: { id: draftId },
-      update: { content },
-      create: { id: draftId, content },
+      update: { content: sealed },
+      create: { id: draftId, content: sealed },
     })
     return NextResponse.json({ ok: true })
   } catch (e: any) {

@@ -199,10 +199,18 @@ export const api = {
     http<{ signature: any }>('/api/signatures', { method: 'POST', body: JSON.stringify(payload) }),
   deleteSignature: (id: string) => http<{ ok: boolean }>(`/api/signatures?id=${id}`, { method: 'DELETE' }),
   listTemplates: () => http<{ templates: any[] }>('/api/templates'),
-  saveTemplate: (payload: { name?: string; subject: string; body: string; signatureText?: string; signatureImage?: string }) =>
-    http<{ template: any }>('/api/templates', { method: 'POST', body: JSON.stringify(payload) }),
-  updateTemplate: (payload: { id: string; name?: string; subject?: string; body?: string; signatureText?: string; signatureImage?: string }) =>
-    http<{ template: any }>('/api/templates', { method: 'PATCH', body: JSON.stringify(payload) }),
+  saveTemplate: (payload: {
+    name?: string; category?: string; subject: string; body: string; plainText?: string
+    signatureText?: string | null; signatureImage?: string | null
+    snapshot?: string | null; imageData?: string | null; imageLabel?: string | null
+    fromName?: string | null; fromEmail?: string | null; providerType?: string | null
+  }) => http<{ template: any }>('/api/templates', { method: 'POST', body: JSON.stringify(payload) }),
+  updateTemplate: (payload: {
+    id: string; name?: string; category?: string; subject?: string; body?: string; plainText?: string
+    signatureText?: string | null; signatureImage?: string | null
+    snapshot?: string | null; imageData?: string | null; imageLabel?: string | null
+    fromName?: string | null; fromEmail?: string | null; providerType?: string | null
+  }) => http<{ template: any }>('/api/templates', { method: 'PATCH', body: JSON.stringify(payload) }),
   deleteTemplate: (id: string) => http<{ ok: boolean }>(`/api/templates?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
   testSmtp: (payload: any) => http<{ ok: boolean; message?: string; error?: string }>('/api/smtp/test', { method: 'POST', body: JSON.stringify(payload), timeoutMs: 35000 }),
 }
