@@ -203,7 +203,17 @@ async function acceptInviteForVerifiedUser(
 
 async function enrollInitialOwner(user: { id: string; email: string }) {
   const initialOwnerEmail = process.env.NEON_INITIAL_OWNER_EMAIL
-  if (!initialOwnerEmail || normalizedEmail(initialOwnerEmail) !== normalizedEmail(user.email)) return false
+  // Allow enrollment if email matches OR if no owner exists yet (first user)
+  const emailMatches = initialOwnerEmail && normalizedEmail(initialOwnerEmail) === normalizedEmail(user.email)
+  if (!emailMatches) {
+    // Check if any owner exists already
+    const existingOwner = await db.workspaceMember.findFirst({
+      where: { workspaceId: BOOTSTRAP_WORKSPACE_ID, role: 'owner' },
+      select: { id: true },
+    })
+    if (existingOwner) return false
+    // No owner exists yet — enroll this user as the first owner
+  }
 
   await db.$transaction(async (tx) => {
     const workspace = await tx.workspace.findUnique({ where: { id: BOOTSTRAP_WORKSPACE_ID } })
@@ -260,7 +270,9 @@ async function resolveWorkspaceContext(request: Request): Promise<ResolveResult>
   if (!user?.id || !user.email) {
     return { ok: false, status: 401, code: 'not_authenticated', error: 'Sign in to continue.' }
   }
-  if (user.emailVerified !== true) {
+  // Only require email verification for email/password sign-ups.
+  // OAuth providers (Google, etc.) verify emails implicitly.
+  if (user.emailVerified === false) {
     return {
       ok: false,
       status: 403,
