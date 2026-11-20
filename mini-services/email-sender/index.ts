@@ -222,33 +222,46 @@ function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)) }
 //    counts survive, so "Restart with credentials" resumes exactly
 //    where the crash happened.
 // ─────────────────────────────────────────────────────────────
-async function recoverOnBoot() {
+async function recoverOnBoot(attempt = 1): Promise<void> {
   try {
     // SQLite-specific pragmas (skip for PostgreSQL)
     if (process.env.DATABASE_URL?.startsWith('file:')) {
-      await db.$queryRawUnsafe('PRAGMA journal_mode=WAL;')
-      await db.$queryRawUnsafe('PRAGMA busy_timeout=5000;')
+      try {
+        await db.$queryRawUnsafe('PRAGMA journal_mode=WAL;')
+        await db.$queryRawUnsafe('PRAGMA busy_timeout=5000;')
+      } catch { /* pragma failures are non-fatal */ }
     }
-  } catch { /* pragma failures are non-fatal */ }
 
-  const reclaimed = await db.emailRecipient.updateMany({
-    where: { status: 'sending' },
-    data: { status: 'pending' },
-  })
-
-  const stale = await db.emailSession.findMany({
-    where: { status: { in: ['running', 'paused', 'queued'] } },
-  })
-  for (const s of stale) {
-    await db.emailSession.update({
-      where: { id: s.id },
-      data: { status: 'failed', completedAt: new Date() },
+    const reclaimed = await db.emailRecipient.updateMany({
+      where: { status: 'sending' },
+      data: { status: 'pending' },
     })
-    log(s.id, 'warn', `Service restarted while "${s.name}" was ${s.status}. Progress preserved — ${s.pendingCount} recipient(s) still queued. Use "Restart with credentials" to continue, or "Reset" to re-run from scratch.`)
-  }
 
-  if (reclaimed.count > 0 || stale.length > 0) {
-    console.log(`🛠 Recovery: reclaimed ${reclaimed.count} claimed recipient(s), ${stale.length} stale session(s) marked for restart`)
+    const stale = await db.emailSession.findMany({
+      where: { status: { in: ['running', 'paused', 'queued'] } },
+    })
+    for (const s of stale) {
+      await db.emailSession.update({
+        where: { id: s.id },
+        data: { status: 'failed', completedAt: new Date() },
+      })
+      log(s.id, 'warn', `Service restarted while "${s.name}" was ${s.status}. Progress preserved — ${s.pendingCount} recipient(s) still queued. Use "Restart with credentials" to continue, or "Reset" to re-run from scratch.`)
+    }
+
+    if (reclaimed.count > 0 || stale.length > 0) {
+      console.log(`🛠 Recovery: reclaimed ${reclaimed.count} claimed recipient(s), ${stale.length} stale session(s) marked for restart`)
+    }
+  } catch (e: any) {
+    // A cold Neon database or a free host waking from sleep must not crash the
+    // engine before it binds its port. Retry with backoff and keep serving.
+    if (attempt >= 6) {
+      console.error(`Boot recovery gave up after ${attempt} attempts:`, e?.message || e)
+      return
+    }
+    const delay = Math.min(30_000, 2_000 * attempt)
+    console.warn(`Boot recovery failed (attempt ${attempt}) — retrying in ${delay}ms:`, e?.message || e)
+    await new Promise((resolve) => setTimeout(resolve, delay))
+    return recoverOnBoot(attempt + 1)
   }
 }
 
@@ -489,11 +502,12 @@ io.on('connection', (socket: Socket) => {
 // ─────────────────────────────────────────────────────────────
 const PORT = Number(process.env.PORT || 3003)
 
-recoverOnBoot().finally(() => {
-  httpServer.listen(PORT, () => {
-    console.log(`📨 email-sender service running on port ${PORT} (socket path ${SOCKET_PATH}, /health, /control/*)`)
-  })
+// Bind the port first so the platform health check passes while a cold database
+// wakes; recovery then runs in the background and retries instead of crashing.
+httpServer.listen(PORT, () => {
+  console.log(`📨 email-sender service running on port ${PORT} (socket path ${SOCKET_PATH}, /health, /control/*)`)
 })
+recoverOnBoot().catch((e) => console.error('Boot recovery error:', e?.message || e))
 
 process.on('SIGTERM', () => { console.log('SIGTERM'); httpServer.close(() => process.exit(0)) })
 process.on('SIGINT', () => { console.log('SIGINT'); httpServer.close(() => process.exit(0)) })
