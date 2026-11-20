@@ -1,0 +1,5 @@
+# Project-scoped Neon MCP connection for Codex-compatible clients.
+# The hosted server uses OAuth and is limited to read-only inspection tools.
+# Keep database writes in reviewed migrations and run MCP against development branches.
+[mcp_servers.neon]
+url = "https://mcp.neon.tech/mcp?readonly=true&secrets=none&category=projects&category=branches&category=endpoints&category=snapshots&category=schema&category=neon_auth&category=data_api&category=observability&category=functions&category=storage&category=realtime"

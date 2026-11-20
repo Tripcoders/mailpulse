@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withWorkspace } from '@/lib/workspace-context'
 
 export const runtime = 'nodejs'
 
 // GET /api/sessions/[id]/recipients?status=&page=&pageSize=&q=
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const GET = withWorkspace(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params
   const { searchParams } = new URL(req.url)
   const status = searchParams.get('status') || undefined
@@ -32,4 +33,4 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   ])
 
   return NextResponse.json({ recipients, total, page, pageSize })
-}
+})

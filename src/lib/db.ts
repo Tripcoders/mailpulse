@@ -1,63 +1,144 @@
 import { PrismaClient } from '@prisma/client'
-import { existsSync, mkdirSync, copyFileSync } from 'fs'
-import { dirname, join } from 'path'
+import { currentWorkspaceContext } from '@/lib/workspace-store'
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
+  scopedPrisma: any
 }
 
-// Determine database URL based on environment
-const isPostgres = process.env.DATABASE_URL?.startsWith('postgresql://') || process.env.DATABASE_URL?.startsWith('postgres://')
-const isVercel = !!process.env.VERCEL
+const databaseUrl = process.env.DATABASE_URL?.trim()
+const isPostgres = databaseUrl?.startsWith('postgresql://') || databaseUrl?.startsWith('postgres://')
 
-let dbUrl: string
-if (isPostgres) {
-  // Cloud database (PostgreSQL) - use as-is
-  dbUrl = process.env.DATABASE_URL!
-} else if (isVercel) {
-  // Vercel with SQLite - use /tmp
-  dbUrl = process.env.DATABASE_URL || 'file:/tmp/mailpulse.db'
-} else {
-  // Local development - use local file
-  dbUrl = process.env.DATABASE_URL || 'file:./db/custom.db'
+if (process.env.VERCEL && !isPostgres) {
+  throw new Error('DATABASE_URL must point to Neon PostgreSQL for Vercel deployments.')
 }
 
-// Only handle file-based databases (SQLite)
-const isFileDb = dbUrl.startsWith('file:')
-if (isFileDb) {
-  const dbPath = dbUrl.replace(/^file:/, '')
-
-  // Ensure the directory exists
-  const dbDir = dirname(dbPath)
-  if (!existsSync(dbDir)) {
-    try {
-      mkdirSync(dbDir, { recursive: true })
-    } catch (e) {
-      console.error('Failed to create db directory:', e)
-    }
-  }
-
-  // On Vercel, copy the bundled database (with schema) to /tmp if it doesn't exist
-  if (isVercel && !existsSync(dbPath)) {
-    const bundledDb = join(process.cwd(), 'db', 'deploy.db')
-    if (existsSync(bundledDb)) {
-      try {
-        copyFileSync(bundledDb, dbPath)
-        console.log('Copied bundled database to /tmp')
-      } catch (e: any) {
-        console.error('Failed to copy bundled database:', e?.message || e)
-      }
-    } else {
-      console.error('Bundled database not found at:', bundledDb)
-    }
-  }
+if (databaseUrl && !isPostgres) {
+  throw new Error('MailPulse now uses Neon PostgreSQL; DATABASE_URL must be a PostgreSQL connection string.')
 }
 
-export const db =
+const baseDb =
   globalForPrisma.prisma ??
   new PrismaClient({
-    datasources: { db: { url: dbUrl } },
+    ...(databaseUrl ? { datasources: { db: { url: databaseUrl } } } : {}),
     log: ['error', 'warn'],
   })
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
+const tenantModels = new Set([
+  'EmailSession',
+  'EmailRecipient',
+  'Attachment',
+  'Signature',
+  'EmailTemplate',
+  'SendLog',
+  'CampaignSmtpCredential',
+  'Setting',
+  'SmtpProfile',
+  'WizardDraft',
+])
+
+const writeOperations = new Set([
+  'create',
+  'createMany',
+  'createManyAndReturn',
+  'delete',
+  'deleteMany',
+  'update',
+  'updateMany',
+  'updateManyAndReturn',
+  'upsert',
+])
+
+function scopeData(data: any, workspaceId: string, includeCampaignChildren = false): any {
+  if (Array.isArray(data)) {
+    return data.map((item) => scopeData(item, workspaceId, includeCampaignChildren))
+  }
+  if (!data || typeof data !== 'object') return data
+
+  const scoped = { ...data, workspaceId }
+  if (includeCampaignChildren) {
+    for (const relation of ['recipients', 'attachments', 'logs']) {
+      const nested = scoped[relation]
+      if (!nested || typeof nested !== 'object') continue
+
+      const nestedScoped = { ...nested }
+      if ('create' in nestedScoped) {
+        nestedScoped.create = scopeData(nestedScoped.create, workspaceId)
+      }
+      if ('createMany' in nestedScoped) {
+        const createMany = nestedScoped.createMany
+        if (createMany && typeof createMany === 'object' && 'data' in createMany) {
+          nestedScoped.createMany = {
+            ...createMany,
+            data: scopeData(createMany.data, workspaceId),
+          }
+        }
+      }
+      scoped[relation] = nestedScoped
+    }
+  }
+  return scoped
+}
+
+function withWorkspaceWhere(args: Record<string, any>, workspaceId: string) {
+  args.where = { ...(args.where || {}), workspaceId }
+}
+
+const scopedDb =
+  globalForPrisma.scopedPrisma ??
+  baseDb.$extends({
+    query: {
+      $allModels: {
+        async $allOperations({ model, operation, args, query }) {
+          if (!model || !tenantModels.has(model)) return query(args)
+
+          const context = currentWorkspaceContext()
+          if (context.role === 'viewer' && writeOperations.has(operation)) {
+            throw new Error('This workspace role is read-only.')
+          }
+
+          const workspaceId = context.workspaceId
+          const scopedArgs = { ...(args as Record<string, any>) }
+
+          if (
+            operation === 'findUnique' ||
+            operation === 'findUniqueOrThrow' ||
+            operation === 'findFirst' ||
+            operation === 'findFirstOrThrow' ||
+            operation === 'findMany' ||
+            operation === 'count' ||
+            operation === 'aggregate' ||
+            operation === 'groupBy' ||
+            operation === 'update' ||
+            operation === 'updateMany' ||
+            operation === 'updateManyAndReturn' ||
+            operation === 'delete' ||
+            operation === 'deleteMany' ||
+            operation === 'upsert'
+          ) {
+            withWorkspaceWhere(scopedArgs, workspaceId)
+          }
+
+          if (operation === 'create') {
+            scopedArgs.data = scopeData(scopedArgs.data, workspaceId, model === 'EmailSession')
+          } else if (operation === 'createMany' || operation === 'createManyAndReturn') {
+            scopedArgs.data = scopeData(scopedArgs.data, workspaceId)
+          } else if (operation === 'update' || operation === 'updateMany' || operation === 'updateManyAndReturn') {
+            scopedArgs.data = scopeData(scopedArgs.data, workspaceId)
+          } else if (operation === 'upsert') {
+            scopedArgs.create = scopeData(scopedArgs.create, workspaceId, model === 'EmailSession')
+            scopedArgs.update = scopeData(scopedArgs.update, workspaceId)
+          }
+
+          return query(scopedArgs as typeof args)
+        },
+      },
+    },
+  })
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = baseDb
+  globalForPrisma.scopedPrisma = scopedDb
+}
+
+export const db = scopedDb

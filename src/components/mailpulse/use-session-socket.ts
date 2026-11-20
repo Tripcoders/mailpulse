@@ -34,6 +34,7 @@ const CONNECT_URLS: { path?: string; rawUrl?: string; direct?: boolean }[] = [
 
 export function useSessionSocket({ sessionId, onProgress, onCompleted, onCancelled }: UseSessionSocketOptions) {
   const [connected, setConnected] = useState(false)
+  const [pollingOnly, setPollingOnly] = useState(false)
   const [logs, setLogs] = useState<LogEntry[]>([])
   const socketRef = useRef<Socket | null>(null)
   const callbacksRef = useRef({ onProgress, onCompleted, onCancelled })
@@ -67,16 +68,40 @@ export function useSessionSocket({ sessionId, onProgress, onCompleted, onCancell
     let attemptTimer: any = null
     let lockIndex: number | null = null
     let current: Socket | null = null
+    setPollingOnly(false)
 
     const clear = () => {
       if (attemptTimer) { clearTimeout(attemptTimer); attemptTimer = null }
       if (current) { current.disconnect(); current = null; socketRef.current = null }
     }
 
-    const attempt = (index: number) => {
+    const attempt = async (index: number) => {
+      if (disposed || !sessionId) return
+      let token: string
+      try {
+        const workspaceId = window.localStorage.getItem('mailpulse-active-workspace-id')
+        const tokenResponse = await fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/socket-token', {
+          cache: 'no-store',
+          headers: workspaceId ? { 'X-MailPulse-Workspace-Id': workspaceId } : undefined,
+        })
+        const tokenData = await tokenResponse.json().catch(() => ({}))
+        if (!tokenResponse.ok || typeof tokenData.token !== 'string') {
+          throw new Error('Could not authorize the campaign log connection')
+        }
+        token = tokenData.token
+      } catch {
+        nextCandidate(index)
+        return
+      }
       if (disposed || !sessionId) return
       const c = CONNECT_URLS[index]
-      const baseOpts = { transports: ['websocket'] as ['websocket'], reconnection: false, timeout: 6000, forceNew: true }
+      const baseOpts = {
+        transports: ['websocket'] as ['websocket'],
+        reconnection: false,
+        timeout: 6000,
+        forceNew: true,
+        auth: { token },
+      }
       let s: Socket
       if (c.direct) {
         // Direct connection to external engine — use its full URL with default socket.io path
@@ -138,7 +163,24 @@ export function useSessionSocket({ sessionId, onProgress, onCompleted, onCancell
       }
     }
 
-    attempt(lockIndex ?? 0)
+    const selectDeliveryFeed = async () => {
+      try {
+        const response = await fetch('/api/health', { cache: 'no-store' })
+        const health = await response.json().catch(() => null)
+        if (!disposed && health?.senderMode === 'vercel-queue') {
+          setConnected(false)
+          setPollingOnly(true)
+          return
+        }
+      } catch {
+        // Continue with the live worker feed when health cannot be read.
+      }
+      if (disposed) return
+      setPollingOnly(false)
+      attempt(lockIndex ?? 0)
+    }
+
+    void selectDeliveryFeed()
 
     return () => {
       disposed = true
@@ -147,5 +189,5 @@ export function useSessionSocket({ sessionId, onProgress, onCompleted, onCancell
     }
   }, [sessionId, appendLog])
 
-  return { connected, logs, clearLogs }
+  return { connected, pollingOnly, logs, clearLogs }
 }

@@ -296,6 +296,11 @@ export function RecipientPicker({
                 <span>Email column: <code className="bg-muted px-1.5 py-0.5 rounded">{csvMeta.detectedEmailColumn || 'email'}</code></span>
                 {csvMeta.detectedNameColumn && <span>Name column: <code className="bg-muted px-1.5 py-0.5 rounded">{csvMeta.detectedNameColumn}</code></span>}
               </div>
+              {Number(csvMeta.overflow) > 0 && (
+                <p role="status" className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                  Only the first {recipients.length.toLocaleString()} unique valid addresses are in this campaign. Split the remaining {Number(csvMeta.overflow).toLocaleString()} into another campaign.
+                </p>
+              )}
             </div>
           )}
         </div>

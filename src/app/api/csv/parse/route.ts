@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Papa from 'papaparse'
+import { MAX_RECIPIENTS, mergeRecipients } from '@/lib/email-paste'
+import { withWorkspace } from '@/lib/workspace-context'
 
 export const runtime = 'nodejs'
 
 // POST /api/csv/parse
 // Accepts a CSV file upload (FormData field "file") and returns parsed recipients.
 // Auto-detects columns: looks for an email column and a name column.
-export async function POST(req: NextRequest) {
+export const POST = withWorkspace(async (req: NextRequest) => {
   try {
     const formData = await req.formData()
     const file = formData.get('file')
@@ -46,10 +48,20 @@ export async function POST(req: NextRequest) {
           sample: rows.slice(0, 3),
         }, { status: 400 })
       }
-      const recipients = rows
+      const validRecipients = rows
         .map((r) => ({ email: (r[anyEmailKey] || '').trim(), name: (nameKey ? r[nameKey] : (r['name'] || '') || '').trim() }))
         .filter((r) => r.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email))
-      return NextResponse.json({ recipients, totalRows: rows.length, headers, detectedEmailColumn: anyEmailKey, detectedNameColumn: nameKey || null, invalid: rows.length - recipients.length })
+      const merged = mergeRecipients([], validRecipients, MAX_RECIPIENTS)
+      return NextResponse.json({
+        recipients: merged.recipients,
+        totalRows: rows.length,
+        headers,
+        detectedEmailColumn: anyEmailKey,
+        detectedNameColumn: nameKey || null,
+        invalid: rows.length - validRecipients.length,
+        duplicatesRemoved: merged.duplicates,
+        overflow: merged.overflow,
+      })
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -65,19 +77,13 @@ export async function POST(req: NextRequest) {
       }
     })
 
-    // Deduplicate by email
-    const seen = new Set<string>()
-    const deduped = recipients.filter((r) => {
-      const key = r.email.toLowerCase()
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
+    const merged = mergeRecipients([], recipients, MAX_RECIPIENTS)
 
     return NextResponse.json({
-      recipients: deduped,
+      recipients: merged.recipients,
       totalRows: rows.length,
-      duplicatesRemoved: recipients.length - deduped.length,
+      duplicatesRemoved: merged.duplicates,
+      overflow: merged.overflow,
       invalid,
       headers,
       detectedEmailColumn: emailKey,
@@ -86,4 +92,4 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed to parse CSV' }, { status: 500 })
   }
-}
+})

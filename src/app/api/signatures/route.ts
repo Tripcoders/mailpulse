@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withWorkspace } from '@/lib/workspace-context'
 
 export const runtime = 'nodejs'
 
 // GET /api/signatures
-export async function GET() {
+export const GET = withWorkspace(async (_req: NextRequest) => {
   const signatures = await db.signature.findMany({ orderBy: { createdAt: 'desc' } })
   return NextResponse.json({ signatures })
-}
+})
 
 // POST /api/signatures  { name, type, content }
-export async function POST(req: NextRequest) {
+export const POST = withWorkspace(async (req: NextRequest) => {
   const body = await req.json()
   const { name, type, content } = body
   if (!name || !type || !content) {
@@ -21,13 +22,13 @@ export async function POST(req: NextRequest) {
   }
   const sig = await db.signature.create({ data: { name, type, content } })
   return NextResponse.json({ signature: sig })
-}
+})
 
 // DELETE /api/signatures?id=...
-export async function DELETE(req: NextRequest) {
+export const DELETE = withWorkspace(async (req: NextRequest) => {
   const { searchParams } = new URL(req.url)
   const id = searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
   await db.signature.delete({ where: { id } })
   return NextResponse.json({ ok: true })
-}
+})

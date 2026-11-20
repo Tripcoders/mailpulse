@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { rm } from 'fs/promises'
+import { withWorkspace } from '@/lib/workspace-context'
+import { removeLegacyAttachmentFile } from '@/lib/legacy-attachments'
 
 export const runtime = 'nodejs'
 
 // GET /api/sessions/[id] - full session details
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const GET = withWorkspace(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params
   const session = await db.emailSession.findUnique({
     where: { id },
-    include: { attachments: true },
+    include: {
+      attachments: {
+        select: { id: true, sessionId: true, filename: true, mimetype: true, size: true, createdAt: true },
+      },
+    },
   })
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
@@ -21,21 +26,24 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   })
 
   return NextResponse.json({ session, breakdown })
-}
+})
 
 // DELETE /api/sessions/[id] - soft delete (move to trash)
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const DELETE = withWorkspace(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params
   const url = new URL(req.url)
   const permanent = url.searchParams.get('permanent') === '1'
   if (permanent) {
-    const attachments = await db.attachment.findMany({ where: { sessionId: id } })
+    const attachments = await db.attachment.findMany({
+      where: { sessionId: id },
+      select: { filepath: true },
+    })
     for (const a of attachments) {
-      try { await rm(a.filepath, { force: true }) } catch {}
+      await removeLegacyAttachmentFile(a.filepath)
     }
     await db.emailSession.delete({ where: { id } })
     return NextResponse.json({ ok: true, permanent: true })
   }
   await db.emailSession.update({ where: { id }, data: { deletedAt: new Date() } })
   return NextResponse.json({ ok: true, trashed: true })
-}
+})

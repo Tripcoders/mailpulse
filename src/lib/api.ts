@@ -6,14 +6,21 @@
 // duplicated) but return the server's error message verbatim.
 import type { Suggestion } from './types'
 
-type HttpOptions = RequestInit & { timeoutMs?: number; retries?: number }
+type HttpOptions = RequestInit & { timeoutMs?: number; retries?: number; skipWorkspace?: boolean }
 
 async function once<T>(url: string, options: HttpOptions, signal: AbortSignal): Promise<T> {
+  const { skipWorkspace, ...requestOptions } = options
   const headers: Record<string, string> = {
-    ...(options?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
-    ...((options?.headers as any) || {}),
+    ...(requestOptions.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+    ...((requestOptions.headers as any) || {}),
   }
-  const res = await fetch(url, { ...options, headers, signal })
+  if (!skipWorkspace && typeof window !== 'undefined') {
+    const workspaceId = window.localStorage.getItem('mailpulse-active-workspace-id')
+    if (workspaceId && !headers['X-MailPulse-Workspace-Id']) {
+      headers['X-MailPulse-Workspace-Id'] = workspaceId
+    }
+  }
+  const res = await fetch(url, { ...requestOptions, headers, signal })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
     throw new Error((data as any)?.error || `Request failed (${res.status})`)
@@ -49,6 +56,38 @@ async function http<T>(url: string, options?: HttpOptions): Promise<T> {
 
 export const api = {
   get: <T>(url: string) => http<T>(url),
+  getWorkspaces: () =>
+    http<{
+      currentWorkspaceId: string
+      workspaces: { id: string; name: string; slug: string; role: string }[]
+    }>('/api/workspaces', { skipWorkspace: true }),
+  getWorkspaceMembers: () =>
+    http<{
+      members: { id: string; email: string; role: string; createdAt: string; isCurrentUser: boolean }[]
+    }>('/api/workspaces/members'),
+  getWorkspaceInvitations: () =>
+    http<{
+      invitations: { id: string; email: string; role: string; expiresAt: string; acceptedAt: string | null; createdAt: string }[]
+    }>('/api/workspaces/invitations'),
+  inviteWorkspaceMember: (email: string, role: string) =>
+    http<{ invitation: { id: string; email: string; role: string; expiresAt: string }; inviteUrl: string }>(
+      '/api/workspaces/invitations',
+      { method: 'POST', body: JSON.stringify({ email, role }) },
+    ),
+  revokeWorkspaceInvitation: (id: string) =>
+    http<{ ok: boolean }>('/api/workspaces/invitations?id=' + encodeURIComponent(id), { method: 'DELETE' }),
+  updateWorkspaceMember: (id: string, role: string) =>
+    http<{ ok: boolean; role: string }>('/api/workspaces/members', {
+      method: 'PATCH',
+      body: JSON.stringify({ id, role }),
+    }),
+  removeWorkspaceMember: (id: string) =>
+    http<{ ok: boolean }>('/api/workspaces/members?id=' + encodeURIComponent(id), { method: 'DELETE' }),
+  setActiveWorkspace: (workspaceId: string) => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('mailpulse-active-workspace-id', workspaceId)
+    }
+  },
   parseCsv: (file: File) => {
     const fd = new FormData()
     fd.append('file', file)
@@ -63,13 +102,17 @@ export const api = {
   permanentDeleteSession: (id: string) => http<{ ok: boolean }>(`/api/sessions/${id}?permanent=1`, { method: 'DELETE' }),
   restoreSession: (id: string) => http<{ ok: boolean }>(`/api/sessions/${id}/restore`, { method: 'POST' }),
   startSession: (id: string, smtpUser: string, smtpPass: string) =>
-    http<{ ok: boolean }>(`/api/sessions/${id}/start`, { method: 'POST', body: JSON.stringify({ smtpUser, smtpPass }) }),
+    http<{ ok: boolean }>(`/api/sessions/${id}/start`, { method: 'POST', body: JSON.stringify({ smtpUser, smtpPass }), timeoutMs: 65000 }),
   startSessionWithProfile: (id: string, profileId: string) =>
-    http<{ ok: boolean }>(`/api/sessions/${id}/start`, { method: 'POST', body: JSON.stringify({ profileId }) }),
+    http<{ ok: boolean }>(`/api/sessions/${id}/start`, { method: 'POST', body: JSON.stringify({ profileId }), timeoutMs: 65000 }),
   pauseSession: (id: string) => http<{ ok: boolean }>(`/api/sessions/${id}/pause`, { method: 'POST' }),
-  resumeSession: (id: string) => http<{ ok: boolean }>(`/api/sessions/${id}/resume`, { method: 'POST' }),
+  resumeSession: (id: string) => http<{ ok: boolean }>(`/api/sessions/${id}/resume`, { method: 'POST', timeoutMs: 65000 }),
   cancelSession: (id: string) => http<{ ok: boolean }>(`/api/sessions/${id}/cancel`, { method: 'POST' }),
-  resendSession: (id: string) => http<{ ok: boolean }>(`/api/sessions/${id}/resend`, { method: 'POST' }),
+  resendSession: (id: string, credentials?: { smtpUser: string; smtpPass: string }) =>
+    http<{ ok: boolean; status?: string; recipientCount?: number; alreadyRunning?: boolean }>(
+      `/api/sessions/${id}/resend`,
+      { method: 'POST', timeoutMs: 65000, ...(credentials ? { body: JSON.stringify(credentials) } : {}) },
+    ),
   duplicateSession: (id: string, name?: string) =>
     http<{ session: any }>(`/api/sessions/${id}/duplicate`, { method: 'POST', body: JSON.stringify({ name }) }),
   resetSession: (id: string) => http<{ ok: boolean }>(`/api/sessions/${id}/reset`, { method: 'POST' }),
@@ -108,5 +151,5 @@ export const api = {
   updateTemplate: (payload: { id: string; name?: string; subject?: string; body?: string; signatureText?: string; signatureImage?: string }) =>
     http<{ template: any }>('/api/templates', { method: 'PATCH', body: JSON.stringify(payload) }),
   deleteTemplate: (id: string) => http<{ ok: boolean }>(`/api/templates?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  testSmtp: (payload: any) => http<{ ok: boolean; message?: string; error?: string }>('/api/smtp/test', { method: 'POST', body: JSON.stringify(payload) }),
+  testSmtp: (payload: any) => http<{ ok: boolean; message?: string; error?: string }>('/api/smtp/test', { method: 'POST', body: JSON.stringify(payload), timeoutMs: 35000 }),
 }

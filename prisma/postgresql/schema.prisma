@@ -1,0 +1,278 @@
+// MailPulse - Bulk Email Sender schema (PostgreSQL variant for cloud deployment)
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Workspace {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members      WorkspaceMember[]
+  invitations  WorkspaceInvitation[]
+  sessions     EmailSession[]
+  recipients   EmailRecipient[]
+  attachments  Attachment[]
+  campaignCredentials CampaignSmtpCredential[]
+  signatures   Signature[]
+  templates    EmailTemplate[]
+  logs         SendLog[]
+  settings     Setting[]
+  smtpProfiles SmtpProfile[]
+  wizardDrafts WizardDraft[]
+}
+
+model WorkspaceMember {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String
+  email       String
+  role        String   @default("viewer")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@unique([workspaceId, email])
+  @@index([userId])
+  @@index([workspaceId, role])
+}
+
+model WorkspaceInvitation {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  email           String
+  role            String    @default("sender")
+  tokenHash       String    @unique
+  invitedByUserId String
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, email, expiresAt])
+}
+
+model WorkerLease {
+  id            String   @id
+  ownerId       String
+  leaseExpiresAt DateTime @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+}
+
+model EmailSession {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  name          String
+  color         String   @default("#3b82f6")
+  category      String   @default("General")
+  status        String   @default("draft")
+  totalEmails   Int      @default(0)
+  sentCount     Int      @default(0)
+  failedCount   Int      @default(0)
+  pendingCount  Int      @default(0)
+
+  queueRunId    String?
+  queueBatch    Int      @default(0)
+
+  fromName      String
+  fromEmail     String
+
+  providerType  String
+  smtpHost      String?
+  smtpPort      Int?
+  smtpSecure    Boolean?
+
+  subject       String
+  bodyHtml      String   @db.Text
+  plainText     String?  @db.Text
+
+  signatureText String?  @db.Text
+  signatureImage String? @db.Text
+
+  batchSize     Int      @default(10)
+  batchDelayMs  Int      @default(2000)
+  perEmailDelayMs Int    @default(500)
+
+  startedAt     DateTime?
+  completedAt   DateTime?
+  deletedAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  recipients    EmailRecipient[]
+  attachments   Attachment[]
+  logs          SendLog[]
+  campaignCredential CampaignSmtpCredential?
+
+  @@index([status])
+  @@index([workspaceId, status])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@unique([id, workspaceId])
+}
+
+model CampaignSmtpCredential {
+  sessionId  String   @id
+  workspaceId String
+  smtpUser   String
+  smtpPassEnc String  @db.Text
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  session   EmailSession @relation(fields: [sessionId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+
+  @@unique([sessionId, workspaceId])
+  @@index([workspaceId, expiresAt])
+}
+
+model EmailRecipient {
+  id        String   @id @default(cuid())
+  sessionId String
+  workspaceId String
+  email     String
+  name      String   @default("")
+  status    String   @default("pending")
+  claimToken String?
+  error     String?
+  attemptCount Int   @default(0)
+  sentAt    DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  session   EmailSession @relation(fields: [sessionId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([sessionId, status])
+  @@index([workspaceId, status])
+}
+
+model Attachment {
+  id        String   @id @default(cuid())
+  sessionId String?
+  workspaceId String
+  filename  String
+  filepath  String?
+  content   Bytes?
+  mimetype  String
+  size      Int
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+
+  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  session   EmailSession? @relation(fields: [sessionId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([workspaceId])
+  @@index([workspaceId, expiresAt])
+}
+
+model Signature {
+  id        String   @id @default(cuid())
+  workspaceId String
+  name      String
+  type      String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+}
+
+model EmailTemplate {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  name           String
+  subject        String
+  body           String   @db.Text
+  // Optional signature snapshot so a saved email restores exactly as written.
+  signatureText  String?  @db.Text
+  signatureImage String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, updatedAt])
+}
+
+model SendLog {
+  id        String   @id @default(cuid())
+  sessionId String
+  workspaceId String
+  level     String   @default("info")
+  message   String   @db.Text
+  recipient String?
+  createdAt DateTime @default(now())
+
+  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  session   EmailSession @relation(fields: [sessionId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([sessionId, createdAt])
+  @@index([workspaceId, createdAt])
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  workspaceId String
+  key       String
+  value     String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, key])
+}
+
+model SmtpProfile {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String   @default("")
+  fromName    String
+  fromEmail   String
+  providerType String
+  smtpHost    String?
+  smtpPort    Int?
+  smtpSecure  Boolean?
+  smtpUser    String
+  smtpPassEnc String
+  isDefault   Boolean  @default(false)
+  lastUsedAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, smtpUser])
+  @@index([workspaceId, isDefault])
+}
+
+model WizardDraft {
+  id        String   @id @default("main")
+  workspaceId String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, updatedAt])
+}

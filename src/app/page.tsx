@@ -18,6 +18,8 @@ import { useTheme } from 'next-themes'
 import { api } from '@/lib/api'
 import { Wizard } from '@/components/mailpulse/wizard'
 import { SessionView } from '@/components/mailpulse/session-view'
+import { SignOutButton } from '@/components/mailpulse/sign-out-button'
+import { WorkspaceSwitcher } from '@/components/mailpulse/workspace-switcher'
 import { sessionStatusMeta, formatTime } from '@/components/mailpulse/helpers'
 import type { SessionSummary } from '@/lib/types'
 
@@ -29,15 +31,20 @@ type BackendHealth = {
   auth?: string
   smtpProfileEncryption?: string
   engineControlAuth?: string
+  senderMode?: 'vercel-queue' | 'persistent-worker'
+  queueSchema?: string
   checkedAt?: string
 }
 
 type EngineDiagnostics = {
-  status: 'ok' | 'down'
+  status: 'ok' | 'down' | 'unverified'
   code: string
   message: string
   configured: boolean
   controlTokenConfigured: boolean
+  controlTokenRequired?: boolean
+  mode?: 'vercel-queue' | 'persistent-worker'
+  queueSchemaReady?: boolean | null
   checkedAt: string
   httpStatus?: number
   worker?: {
@@ -51,7 +58,8 @@ type EngineDiagnostics = {
 
 function displayHealthStatus(status?: string) {
   if (status === 'ok' || status === 'ready' || status === 'held') return 'Ready'
-  if (status === 'down' || status === 'degraded' || status === 'waiting') return 'Down'
+  if (status === 'unverified') return 'Not verified'
+  if (status === 'down' || status === 'degraded' || status === 'waiting' || status === 'unavailable') return 'Down'
   if (status === 'missing' || status === 'misconfigured') return 'Needs setup'
   if (status === 'not_checked') return 'Not checked'
   return 'Checking'
@@ -69,18 +77,30 @@ function healthStatusClass(status?: string) {
 
 function createAiRepairBrief(health: BackendHealth | null, diagnostics: EngineDiagnostics | null) {
   const worker = diagnostics?.worker
+  const queueMode = diagnostics?.mode === 'vercel-queue' || health?.senderMode === 'vercel-queue'
   const lines = [
     'Help diagnose and repair MailPulse using this redacted backend report.',
     `Checked at: ${diagnostics?.checkedAt || health?.checkedAt || 'not available'}`,
     `Application: ${health?.app || 'unknown'}`,
     `Neon database: ${health?.db || 'unknown'}`,
+    `Sender mode: ${queueMode ? 'Vercel Queues' : 'persistent worker'}`,
     `Sender status: ${diagnostics?.status || health?.engine || 'unknown'}`,
     `Sender diagnosis: ${diagnostics?.code || 'not_run'} — ${diagnostics?.message || 'No detailed sender probe has run yet.'}`,
-    `Sender URL configured: ${diagnostics?.configured === undefined ? 'not checked' : diagnostics.configured ? 'yes' : 'no'}`,
-    `Worker control token configured: ${diagnostics?.controlTokenConfigured === undefined ? 'not checked' : diagnostics.controlTokenConfigured ? 'yes' : 'no'}`,
-    `Worker readiness: database=${worker?.database || 'not reported'}, recovery=${worker?.recovery || 'not reported'}, lease=${worker?.lease || 'not reported'}, controlAuth=${worker?.controlAuth || 'not reported'}`,
     'Do not request or expose database URLs, API tokens, SMTP passwords, or recipient addresses. Do not send emails or deploy changes automatically.',
   ]
+
+  if (queueMode) {
+    lines.push(
+      `Campaign queue schema ready: ${diagnostics?.queueSchemaReady === undefined ? health?.queueSchema || 'not checked' : diagnostics.queueSchemaReady === null ? 'not available' : diagnostics.queueSchemaReady ? 'yes' : 'no'}`,
+      'Persistent sender URL and worker control token: not required in Vercel Queues mode.',
+    )
+  } else {
+    lines.push(
+      `Sender URL configured: ${diagnostics?.configured === undefined ? 'not checked' : diagnostics.configured ? 'yes' : 'no'}`,
+      `Worker control token configured: ${diagnostics?.controlTokenConfigured === undefined ? 'not checked' : diagnostics.controlTokenConfigured ? 'yes' : 'no'}`,
+      `Worker readiness: database=${worker?.database || 'not reported'}, recovery=${worker?.recovery || 'not reported'}, lease=${worker?.lease || 'not reported'}, controlAuth=${worker?.controlAuth || 'not reported'}`,
+    )
+  }
 
   if (diagnostics?.repairSteps.length) {
     lines.push('Suggested repair steps:', ...diagnostics.repairSteps.map((step, index) => `${index + 1}. ${step}`))
@@ -140,13 +160,15 @@ export default function Home() {
       if (diagnostic) {
         setEngineDiagnostics(diagnostic)
         setHealth((current) => current
-          ? { ...current, engine: diagnostic.status, checkedAt: diagnostic.checkedAt }
-          : { app: 'unknown', db: 'unknown', engine: diagnostic.status, checkedAt: diagnostic.checkedAt })
+          ? { ...current, engine: diagnostic.status, senderMode: diagnostic.mode || current.senderMode, queueSchema: diagnostic.queueSchemaReady === undefined ? current.queueSchema : diagnostic.queueSchemaReady ? 'ok' : diagnostic.queueSchemaReady === false ? 'missing' : 'unavailable', checkedAt: diagnostic.checkedAt }
+          : { app: 'unknown', db: 'unknown', engine: diagnostic.status, senderMode: diagnostic.mode, queueSchema: diagnostic.queueSchemaReady === true ? 'ok' : diagnostic.queueSchemaReady === false ? 'missing' : 'unavailable', checkedAt: diagnostic.checkedAt })
       }
 
       if (announce) {
         if (healthResult?.db === 'ok' && diagnostic?.status === 'ok') {
-          toast.success('Backend checks passed. The sender is ready.')
+          toast.success(diagnostic.mode === 'vercel-queue'
+            ? 'Vercel Queue mode and database schema are ready. No email was sent.'
+            : 'Backend checks passed. The sender is ready.')
         } else {
           toast.error(diagnostic?.message || 'Some backend services still need attention.')
         }
@@ -224,34 +246,57 @@ export default function Home() {
   const activeCount = sessions.filter((s) => s.status === 'running' || s.status === 'paused' || s.status === 'queued').length
   const diagnosticIsFresh = engineDiagnostics && Date.now() - new Date(engineDiagnostics.checkedAt).getTime() < 30000
   const visibleEngineStatus = diagnosticIsFresh ? engineDiagnostics.status : health?.engine
+  const senderMode = diagnosticIsFresh ? engineDiagnostics?.mode || health?.senderMode : health?.senderMode
+  const queueMode = senderMode === 'vercel-queue'
   const headerStatusLabel = !health
     ? 'Checking services…'
     : visibleEngineStatus !== 'ok'
-      ? 'Engine down'
+      ? queueMode
+        ? visibleEngineStatus === 'unverified' ? 'Queue unverified' : 'Queue setup needed'
+        : 'Engine down'
       : health.db !== 'ok'
         ? 'Database down'
         : health.auth === 'missing'
           ? 'Auth setup needed'
           : health.smtpProfileEncryption === 'missing'
             ? 'SMTP key missing'
-            : health.engineControlAuth === 'missing'
+            : !queueMode && health.engineControlAuth === 'missing'
               ? 'Engine token missing'
+              : queueMode && health.queueSchema !== 'ok'
+                ? 'Queue setup needed'
               : health.ok === false
                 ? 'Backend needs attention'
-                : 'All systems go'
+                : queueMode ? 'Queue mode' : 'All systems go'
   const headerStatusReady = Boolean(health?.ok !== false && health?.db === 'ok' && visibleEngineStatus === 'ok')
+  const queueSchemaStatus = engineDiagnostics?.queueSchemaReady === true || health?.queueSchema === 'ok'
+    ? 'ok'
+    : engineDiagnostics?.queueSchemaReady === false || health?.queueSchema === 'missing'
+      ? 'missing'
+      : engineDiagnostics?.queueSchemaReady === null || health?.queueSchema === 'unavailable'
+        ? 'unavailable'
+      : 'not_checked'
+  const deliveryRows = queueMode
+    ? [
+        { label: 'Campaign delivery', status: engineDiagnostics?.status || health?.engine || 'unknown', detail: engineDiagnostics?.message || 'Vercel Queues is selected; the old sender host is not used.' },
+        { label: 'Queue database schema', status: queueSchemaStatus, detail: 'Neon needs queue state, recipient claims, and encrypted temporary credential storage.' },
+      ]
+    : [
+        { label: 'Sender engine', status: engineDiagnostics?.status || health?.engine || 'unknown', detail: engineDiagnostics?.message || 'Run diagnostics to get a specific sender failure reason.' },
+        { label: 'Sender URL', status: engineDiagnostics ? engineDiagnostics.configured ? 'ok' : 'missing' : 'not_checked', detail: engineDiagnostics?.configured ? 'A server-side sender URL is configured; its value is never shown here.' : 'No sender URL configuration has been confirmed.' },
+        { label: 'Worker control token', status: engineDiagnostics ? engineDiagnostics.controlTokenConfigured ? 'ok' : 'missing' : health?.engineControlAuth || 'not_checked', detail: 'The app and worker must share the same server-side control token.' },
+      ]
   const diagnosticRows = [
     { label: 'MailPulse app', status: health?.app || 'unknown', detail: 'The web application and health endpoint.' },
     { label: 'Neon database', status: health?.db || 'unknown', detail: 'Campaign records and worker data store.' },
-    { label: 'Sender engine', status: engineDiagnostics?.status || health?.engine || 'unknown', detail: engineDiagnostics?.message || 'Run diagnostics to get a specific sender failure reason.' },
-    { label: 'Sender URL', status: engineDiagnostics ? engineDiagnostics.configured ? 'ok' : 'missing' : 'not_checked', detail: engineDiagnostics?.configured ? 'A server-side sender URL is configured; its value is never shown here.' : 'No sender URL configuration has been confirmed.' },
-    { label: 'Worker control token', status: engineDiagnostics ? engineDiagnostics.controlTokenConfigured ? 'ok' : 'missing' : health?.engineControlAuth || 'not_checked', detail: 'The app and worker must share the same server-side control token.' },
+    ...deliveryRows,
     { label: 'Neon Auth', status: health?.auth || 'not_checked', detail: 'Authentication configuration for workspace access.' },
     { label: 'SMTP encryption key', status: health?.smtpProfileEncryption || 'not_checked', detail: 'Stable server-side key used to encrypt saved sender passwords.' },
   ]
   const repairSteps = engineDiagnostics?.repairSteps?.length
     ? engineDiagnostics.repairSteps
-    : ['Deploy the sender as a persistent service and connect it to the same Neon database as the web app.', 'Set the stable sender URL and matching ENGINE_API_TOKEN in the Vercel app and worker.', 'Wait for the sender /health endpoint to report ready, then verify SMTP and test with an address you control.']
+    : queueMode
+      ? ['Confirm the campaign queue migration is applied to the intended Neon branch.', 'Confirm Vercel Queues is enabled and the consumer route is part of the deployed build.', 'After you choose to deploy, verify SMTP and manually test only to an address you control.']
+      : ['Start the sender on a persistent service connected to the same Neon database as the app.', 'Set the stable sender URL and matching ENGINE_API_TOKEN in the app and worker secret stores.', 'After the worker is ready, verify SMTP and manually test only to an address you control.']
 
   return (
     <>
@@ -262,6 +307,7 @@ export default function Home() {
           <div className="flex items-center gap-2.5">
               <img src="/logo.svg" alt="Mail Pulse" className="h-8 w-auto" />
               <h1 className="font-semibold text-base">Mail Pulse</h1>
+              <WorkspaceSwitcher />
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2">
             <div className="flex items-center gap-3 mr-1 text-xs text-muted-foreground">
@@ -274,7 +320,7 @@ export default function Home() {
                 aria-haspopup="dialog"
                 aria-expanded={engineDialogOpen}
                 aria-label={`Backend status: ${headerStatusLabel}. Open diagnostics.`}
-                title={engineDiagnostics?.message || `App: ${health?.app || 'checking'} · Database: ${health?.db || 'checking'} · Send engine: ${visibleEngineStatus || 'checking'}`}
+                title={engineDiagnostics?.message || `App: ${health?.app || 'checking'} · Database: ${health?.db || 'checking'} · Campaign delivery: ${visibleEngineStatus || 'checking'}`}
                 className="inline-flex h-8 items-center gap-1.5 rounded-md border border-transparent px-1.5 text-xs font-medium text-foreground transition-colors hover:border-border hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-2"
               >
                 <span className={`h-1.5 w-1.5 rounded-full ${!health ? 'bg-muted-foreground' : headerStatusReady ? 'bg-emerald-500' : 'bg-amber-500'} ${headerStatusReady ? '' : 'mp-pulse'}`} />
@@ -375,6 +421,7 @@ export default function Home() {
                 {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </Button>
             )}
+            <SignOutButton />
             <Button size="sm" className="bg-brand text-white hover:bg-blue-700 hidden sm:inline-flex" onClick={newCampaign}>
               <Plus className="h-4 w-4" /> New campaign
             </Button>
@@ -590,7 +637,7 @@ export default function Home() {
             <div className="min-w-0">
               <DialogTitle>Backend diagnostics</DialogTitle>
               <DialogDescription className="mt-1">
-                Check the app, Neon, and sender worker, then get a safe repair brief.
+                Check the app, Neon, and campaign delivery path, then get a safe repair brief.
               </DialogDescription>
             </div>
           </div>
@@ -629,13 +676,13 @@ export default function Home() {
             <Sparkles className="h-4 w-4 text-brand" /> Guided repair plan
           </div>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            {engineDiagnostics?.message || 'Run diagnostics to identify whether the sender URL, worker process, Neon connection, or control token needs attention.'}
+            {engineDiagnostics?.message || (queueMode ? 'Run diagnostics to check the Vercel Queue path and Neon schema.' : 'Run diagnostics to identify whether the sender URL, worker process, Neon connection, or control token needs attention.')}
           </p>
           <ol className="space-y-2 pl-5 text-sm leading-relaxed text-foreground marker:text-brand">
             {repairSteps.map((step, index) => <li key={`${index}-${step}`} className="list-decimal">{step}</li>)}
           </ol>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            This check does not test SMTP credentials or send email. A browser cannot start a remote worker or change Vercel secrets.
+            This check does not test SMTP credentials, enqueue a campaign, or send email. It cannot start a remote worker or change Vercel project settings or secrets.
           </p>
           <p className="text-xs leading-relaxed text-muted-foreground">
             Copy the redacted brief into your AI coding assistant to review the backend fix. It contains no URLs, tokens, SMTP passwords, or recipient addresses.

@@ -37,6 +37,7 @@ export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated, on
   const [acting, setActing] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [restartOpen, setRestartOpen] = useState(false)
+  const [restartAction, setRestartAction] = useState<'restart' | 'resend'>('restart')
   const [restartUser, setRestartUser] = useState('')
   const [restartPass, setRestartPass] = useState('')
   const [restarting, setRestarting] = useState(false)
@@ -76,7 +77,7 @@ export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated, on
     return () => clearInterval(interval)
   }, [progress?.status, loadSession])
 
-  const { connected, logs, clearLogs } = useSessionSocket({
+  const { connected, pollingOnly, logs, clearLogs } = useSessionSocket({
     sessionId,
     onProgress: (p) => {
       setProgress(p)
@@ -99,11 +100,13 @@ export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated, on
     },
   })
 
-  // Backup channel: when the live socket feed can't connect (engine down,
-  // proxies, VPNs), poll the HTTP logs endpoint so monitoring never goes blind.
+  // Queue mode intentionally uses persisted database logs; this also remains a
+  // fallback when a persistent worker socket is unavailable.
   const [pollLogs, setPollLogs] = useState<LogEntry[]>([])
   useEffect(() => {
     if (connected) { setPollLogs([]); return }
+    const status = progress?.status || session?.status
+    const shouldPollContinuously = status === 'running' || status === 'paused' || status === 'queued'
     let alive = true
     const tick = async () => {
       try {
@@ -116,9 +119,10 @@ export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated, on
       } catch { /* engine fully down — retry next tick */ }
     }
     tick()
+    if (!shouldPollContinuously) return () => { alive = false }
     const i = setInterval(tick, 2500)
     return () => { alive = false; clearInterval(i) }
-  }, [connected, sessionId])
+  }, [connected, sessionId, progress?.status, session?.status])
   const liveLogs = connected ? logs : (pollLogs.length >= logs.length ? pollLogs : logs)
 
   const act = async (fn: () => Promise<any>, label: string) => {
@@ -163,8 +167,13 @@ export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated, on
     }
     setRestarting(true)
     try {
-      await api.startSession(sessionId, restartUser.trim(), restartPass.trim())
-      toast.success('Restarting send engine with new credentials…')
+      if (restartAction === 'resend') {
+        await api.resendSession(sessionId, { smtpUser: restartUser.trim(), smtpPass: restartPass.trim() })
+        toast.success('Failed recipients queued for retry.')
+      } else {
+        await api.startSession(sessionId, restartUser.trim(), restartPass.trim())
+        toast.success('Campaign queued with the updated sender credentials.')
+      }
       setRestartOpen(false)
       setRestartPass('')
       setTimeout(loadSession, 500)
@@ -173,6 +182,28 @@ export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated, on
       toast.error(e.message || 'Failed to restart')
     } finally {
       setRestarting(false)
+    }
+  }
+
+  const resendFailed = async () => {
+    setActing('Resend failed')
+    try {
+      await api.resendSession(sessionId)
+      toast.success('Failed recipients queued for retry.')
+      setTimeout(loadSession, 500)
+      setRefreshKey((key) => key + 1)
+      onSessionUpdated()
+    } catch (error: any) {
+      const message = error?.message || 'Failed recipients could not be queued.'
+      if (/SMTP credentials|credentials again|expired|could not be decrypted|authentication failed/i.test(message)) {
+        setRestartAction('resend')
+        setRestartOpen(true)
+        toast.info('Re-enter the sender credentials to retry the failed recipients.')
+      } else {
+        toast.error(message)
+      }
+    } finally {
+      setActing(null)
     }
   }
 
@@ -224,14 +255,14 @@ export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated, on
               <span className="inline-flex items-center gap-1"><Calendar className="h-3 w-3" /> Created {formatTime(session.createdAt)}</span>
               <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" /> Duration {duration(session.startedAt, session.completedAt)}</span>
               <span className="inline-flex items-center gap-1">
-                <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-500' : 'bg-rose-400'}`} />
-                {connected ? 'Live stream connected' : 'Reconnecting…'}
+                <span className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-500' : pollingOnly ? 'bg-sky-500' : 'bg-rose-400'}`} />
+                {connected ? 'Live stream connected' : pollingOnly ? 'Database updates active' : 'Reconnecting…'}
               </span>
             </p>
           </div>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
-          {isRunning && (
+          {(isRunning || status === 'queued') && (
             <Button variant="outline" size="sm" onClick={() => act(api.pauseSession.bind(null, sessionId), 'Pause')} disabled={!!acting}>
               {acting === 'Pause' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pause className="h-4 w-4" />} Pause
             </Button>
@@ -247,12 +278,12 @@ export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated, on
             </Button>
           )}
           {hasFailed && !isActive && (
-            <Button size="sm" className="bg-brand text-white hover:bg-blue-700" onClick={() => act(api.resendSession.bind(null, sessionId), 'Resend failed')} disabled={!!acting}>
+            <Button size="sm" className="bg-brand text-white hover:bg-blue-700" onClick={resendFailed} disabled={!!acting}>
               {acting === 'Resend failed' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Resend failed ({failed})
             </Button>
           )}
           {canRestart && (
-            <Button size="sm" className="bg-brand text-white hover:bg-blue-700" onClick={() => setRestartOpen(true)}>
+            <Button size="sm" className="bg-brand text-white hover:bg-blue-700" onClick={() => { setRestartAction('restart'); setRestartOpen(true) }}>
               <RefreshCw className="h-4 w-4" /> Restart with credentials
             </Button>
           )}
@@ -369,9 +400,11 @@ export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated, on
       <Dialog open={restartOpen} onOpenChange={setRestartOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Restart campaign</DialogTitle>
+            <DialogTitle>{restartAction === 'resend' ? 'Retry failed recipients' : 'Restart campaign'}</DialogTitle>
             <DialogDescription>
-              This campaign has {pending} pending recipient{pending === 1 ? '' : 's'}. Re-enter your SMTP credentials to retry sending. Only pending recipients will be processed.
+              {restartAction === 'resend'
+                ? 'Re-enter your SMTP credentials to verify the sender and retry failed recipients. Any remaining pending recipients will also continue.'
+                : `This campaign has ${pending} pending recipient${pending === 1 ? '' : 's'}. Re-enter your SMTP credentials to retry sending. Only pending recipients will be processed.`}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -389,7 +422,7 @@ export function SessionView({ sessionId, onBack, onDeleted, onSessionUpdated, on
             <Button variant="outline" onClick={() => setRestartOpen(false)} disabled={restarting}>Cancel</Button>
             <Button onClick={doRestart} disabled={restarting} className="bg-brand text-white hover:bg-blue-700">
               {restarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              {restarting ? 'Starting…' : 'Start sending'}
+              {restarting ? 'Starting…' : restartAction === 'resend' ? 'Verify & retry' : 'Start sending'}
             </Button>
           </DialogFooter>
         </DialogContent>

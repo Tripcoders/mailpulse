@@ -518,7 +518,13 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
       setRecipients(data.recipients)
       setRecipientSource('csv')
       setRecipientMode('csv')
-      toast.success(`Parsed ${data.recipients.length} valid recipient${data.recipients.length === 1 ? '' : 's'}`)
+      if (data.overflow > 0) {
+        toast.error(
+          `Imported the first ${data.recipients.length.toLocaleString()} valid recipients. ${data.overflow.toLocaleString()} more were left out because each campaign is limited to 1,000.`,
+        )
+      } else {
+        toast.success(`Parsed ${data.recipients.length} valid recipient${data.recipients.length === 1 ? '' : 's'}`)
+      }
       if (!sessionName) setSessionName(file.name.replace(/\.[^.]+$/, ''))
     } catch (e: any) {
       toast.error(e.message || 'Failed to parse CSV')
@@ -564,6 +570,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
   }
   const removeAttachment = async (id: string) => {
     setAttachments((prev) => prev.filter((a) => a.stagingId !== id))
+    api.deleteAttachment(id).catch(() => {})
     toast.info('Attachment removed')
   }
 
@@ -722,9 +729,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
         batchDelayMs: Number(batchDelayMs),
         perEmailDelayMs: Number(perEmailDelayMs),
         recipients,
-        attachments: attachments.map((a) => ({
-          filename: a.filename, filepath: a.filepath, mimetype: a.mimetype, size: a.size,
-        })),
+        attachments: attachments.map((a) => ({ stagingId: a.stagingId })),
       })
       // The campaign exists in the database now, so it is the durable record.
       // Release the wizard draft even if starting the engine fails — otherwise
@@ -733,10 +738,14 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
       api.saveSettings({ lastCampaign: { providerType, batchSize, batchDelayMs, perEmailDelayMs } }).catch(() => {})
       // Save the sender before trying to start, so even an engine outage never
       // costs the user their SMTP configuration again.
-      if (smtpPass) await persistProfile({ silent: true })
-      toast.success('Campaign created. Starting send engine…')
+      const savedProfile = smtpPass && rememberPass
+        ? await persistProfile({ silent: true })
+        : null
+      toast.success('Campaign created. Queueing delivery…')
       try {
-        if (smtpUser && smtpPass) {
+        if (savedProfile?.id) {
+          await api.startSessionWithProfile(session.id, savedProfile.id)
+        } else if (smtpUser && smtpPass) {
           await api.startSession(session.id, smtpUser, smtpPass)
         } else {
           await api.startSessionWithProfile(session.id, selectedProfileId!)
@@ -1151,14 +1160,14 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
                     <DuoTile icon={Paperclip} size="sm" /> Attachments
                     <Badge variant="outline" className="text-[10px] font-normal">Optional</Badge>
                   </h2>
-                  <p className="text-sm text-muted-foreground mt-1">Add files to attach to every email. Up to 25 MB each. Drag &amp; drop or browse.</p>
+                  <p className="text-sm text-muted-foreground mt-1">Add up to 10 files, 4 MiB each and 18 MiB total. Drag &amp; drop or browse.</p>
                 </div>
               </div>
               <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
                 <p className="font-medium text-foreground flex items-center gap-1.5"><Info className="h-3.5 w-3.5" /> What this step requires</p>
                 <ul className="list-disc pl-5 space-y-0.5">
                   <li>Nothing is required — campaigns send fine with zero attachments.</li>
-                  <li>Each file is uploaded to the server staging area, then attached to every outgoing email.</li>
+                  <li>Uploads stay available for 24 hours while you finish the campaign.</li>
                   <li>Use the <b>Remove</b> (×) button on any row to detach before launch.</li>
                 </ul>
               </div>
@@ -1431,7 +1440,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
               <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer select-none" title="Encrypted (AES-256-GCM) before it is stored in your database">
                 <input type="checkbox" checked={rememberPass} onChange={(e) => setRememberPass(e.target.checked)} className="h-4 w-4 mt-0.5 rounded cursor-pointer" />
                 <span>
-                  <b className="text-foreground">Save this sender automatically</b> — the password is encrypted before it reaches your database and stays available on every visit, so you never re-type it.
+                  <b className="text-foreground">Save this sender automatically</b> — the password is encrypted in your sender library and stays available on every visit. If this is unchecked, the campaign still stores an encrypted temporary copy in Neon for up to seven days so background delivery and retries can finish.
                   {selectedProfileId && profiles.some((p) => p.id === selectedProfileId && p.hasPassword) && (
                     <span className="block mt-0.5 text-emerald-600 font-medium">✓ A password is already saved for {smtpUser || 'this sender'} — you can launch without typing it.</span>
                   )}
@@ -1586,7 +1595,7 @@ export function Wizard({ onLaunched, onCancel, initialName, initialColor, initia
               )}
               <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 flex items-start gap-2 text-xs text-amber-800">
                 <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-                <span>By launching, emails will be sent via your SMTP account. Make sure you have permission to email these recipients and respect anti-spam laws (CAN-SPAM/GDPR). The sandbox may block outbound SMTP — if so, failures will be logged clearly so you can run this on a server with SMTP access.</span>
+                <span>MailPulse verifies your SMTP login before queueing the campaign. Vercel Queues sends recipients in resumable batches, and Neon stores the campaign, progress, attachments, and encrypted temporary SMTP credentials. Check your provider’s sending limits and email only recipients you are allowed to contact.</span>
               </div>
             </div>
           )}

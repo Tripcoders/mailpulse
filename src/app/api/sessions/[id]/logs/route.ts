@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withWorkspace } from '@/lib/workspace-context'
 
 export const runtime = 'nodejs'
 
 // GET /api/sessions/[id]/logs?limit=
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const GET = withWorkspace(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params
   const { searchParams } = new URL(req.url)
   const limit = Math.min(1000, Math.max(1, Number(searchParams.get('limit') || '500')))
@@ -14,4 +15,4 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     take: limit,
   })
   return NextResponse.json({ logs })
-}
+})

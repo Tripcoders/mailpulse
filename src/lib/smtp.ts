@@ -13,11 +13,13 @@ const PROVIDER_SETTINGS: Partial<Record<ProviderType, SmtpSettings>> = {
   ses: { host: 'email-smtp.us-east-1.amazonaws.com', port: 587, secure: false },
 }
 
-export function normalizeSmtpPassword(providerType: ProviderType, password: string) {
+export function normalizeSmtpPassword(providerType: ProviderType, password: string, smtpHost?: string | null) {
   const trimmed = password.trim()
   // Google displays app passwords in four-character groups. Spaces copied
   // from that display are separators, not part of the SMTP password.
-  return providerType === 'gmail' ? trimmed.replace(/\s+/g, '') : trimmed
+  const host = smtpHost?.trim().toLowerCase().replace(/\.$/, '')
+  const isGmail = providerType === 'gmail' || host === 'smtp.gmail.com' || host === 'smtp.googlemail.com'
+  return isGmail ? trimmed.replace(/\s+/g, '') : trimmed
 }
 
 export function resolveSmtpSettings(

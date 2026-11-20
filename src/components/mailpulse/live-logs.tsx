@@ -5,8 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Radio, Pause, Download, Eraser } from './icons'
+import { Radio, Pause, Download, Eraser, Copy } from './icons'
 import { logLevelMeta, formatClock } from './helpers'
+import { toast } from 'sonner'
 import type { LogEntry } from '@/lib/types'
 
 interface LiveLogsProps {
@@ -33,10 +34,13 @@ export function LiveLogs({ logs, connected, live, onClear }: LiveLogsProps) {
     setAutoScroll(atBottom)
   }
 
-  const downloadLogs = () => {
-    const text = logs
+  const formatLogText = () =>
+    logs
       .map((l) => `[${formatClock(l.timestamp)}] ${l.level.toUpperCase().padEnd(7)} ${l.recipient ? `(${l.recipient}) ` : ''}${l.message}`)
       .join('\n')
+
+  const downloadLogs = () => {
+    const text = formatLogText()
     const blob = new Blob([text], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -44,6 +48,27 @@ export function LiveLogs({ logs, connected, live, onClear }: LiveLogsProps) {
     a.download = `mailpulse-logs-${Date.now()}.log`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  const copyLogs = async () => {
+    const text = formatLogText()
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        const ta = document.createElement('textarea')
+        ta.value = text
+        ta.style.position = 'fixed'
+        ta.style.opacity = '0'
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+      }
+      toast.success('Logs copied to clipboard')
+    } catch {
+      toast.error('Could not copy logs')
+    }
   }
 
   return (
@@ -67,6 +92,15 @@ export function LiveLogs({ logs, connected, live, onClear }: LiveLogsProps) {
             onClick={onClear}
           >
             <Eraser className="h-3.5 w-3.5" /> Clear
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-muted-foreground hover:text-foreground hover:bg-muted"
+            onClick={copyLogs}
+            disabled={logs.length === 0}
+          >
+            <Copy className="h-3.5 w-3.5" /> Copy
           </Button>
           <Button
             variant="ghost"

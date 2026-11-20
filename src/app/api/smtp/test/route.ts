@@ -4,14 +4,16 @@ import { db } from '@/lib/db'
 import { decryptSecret } from '@/lib/crypto'
 import { normalizeSmtpPassword, resolveSmtpSettings, smtpVerificationError } from '@/lib/smtp'
 import type { ProviderType } from '@/lib/types'
+import { withWorkspace } from '@/lib/workspace-context'
 
 export const runtime = 'nodejs'
+export const maxDuration = 30
 
 const PROVIDER_TYPES: ProviderType[] = ['gmail', 'yahoo', 'outlook', 'icloud', 'zoho', 'sendgrid', 'mailgun', 'ses', 'smtp']
 
 // POST /api/smtp/test verifies the SMTP credentials without sending an email.
 // Saved credentials are decrypted only for this request and are never returned.
-export async function POST(req: NextRequest) {
+export const POST = withWorkspace(async (req: NextRequest) => {
   let body: Record<string, unknown>
   try {
     body = await req.json()
@@ -39,7 +41,10 @@ export async function POST(req: NextRequest) {
   const smtpUser = String(profile?.smtpUser || body.smtpUser || '').trim()
   const savedPassword = profile ? decryptSecret(profile.smtpPassEnc) : ''
   const rawPassword = profile ? savedPassword : String(body.smtpPass || '')
-  const smtpPass = providerType ? normalizeSmtpPassword(providerType, rawPassword) : rawPassword.trim()
+  const smtpHost = profile?.smtpHost || (typeof body.smtpHost === 'string' ? body.smtpHost : null)
+  const smtpPass = providerType
+    ? normalizeSmtpPassword(providerType, rawPassword, smtpHost)
+    : rawPassword.trim()
 
   if (!providerType || !PROVIDER_TYPES.includes(providerType)) {
     return NextResponse.json({ ok: false, error: 'Choose a supported SMTP provider.' }, { status: 400 })
@@ -51,7 +56,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error }, { status: 400 })
   }
 
-  const smtpHost = profile?.smtpHost || (typeof body.smtpHost === 'string' ? body.smtpHost : null)
   const smtpPort = profile?.smtpPort ?? (body.smtpPort === undefined ? null : Number(body.smtpPort))
   const smtpSecure = profile?.smtpSecure ?? (typeof body.smtpSecure === 'boolean' ? body.smtpSecure : null)
 
@@ -78,4 +82,4 @@ export async function POST(req: NextRequest) {
   } finally {
     transporter.close()
   }
-}
+})

@@ -1,19 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { cp } from 'fs/promises'
-import { join, basename } from 'path'
-import { randomUUID } from 'crypto'
+import { withWorkspace } from '@/lib/workspace-context'
+import { getSafeLegacyAttachmentPath } from '@/lib/legacy-attachments'
+import { readFile } from 'node:fs/promises'
 
 export const runtime = 'nodejs'
-
-// Mirrors the upload route: repo-local by default, UPLOAD_DIR in deployment.
-const UPLOAD_DIR = process.env.UPLOAD_DIR || (process.env.VERCEL ? '/tmp/upload' : join(process.cwd(), 'upload'))
 
 // POST /api/sessions/[id]/duplicate — reuse a campaign as a fresh draft.
 // Copies content, throttle config, recipients (reset to pending) and attachment
 // FILES (so deleting the original never breaks the copy). SMTP credentials are
 // never stored, so the copy starts without them — re-enter at send time.
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const POST = withWorkspace(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   try {
     const { id } = await params
     const source = await db.emailSession.findUnique({
@@ -28,16 +25,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (body?.name?.trim()) name = body.name.trim()
     } catch {}
 
-    // Copy attachment files to fresh staging dirs (shared paths would break
-    // when the original campaign is deleted).
-    const copiedAttachments: { filename: string; filepath: string; mimetype: string; size: number }[] = []
+    const copiedAttachments: {
+      filename: string
+      filepath: null
+      content: Buffer
+      mimetype: string
+      size: number
+    }[] = []
     for (const a of source.attachments) {
       try {
-        const stagingId = randomUUID()
-        const dir = join(UPLOAD_DIR, stagingId)
-        const dest = join(dir, basename(a.filepath))
-        await cp(a.filepath, dest, { recursive: true })
-        copiedAttachments.push({ filename: a.filename, filepath: dest, mimetype: a.mimetype, size: a.size })
+        let content = a.content ? Buffer.from(a.content) : null
+        if (!content && a.filepath) {
+          const safePath = getSafeLegacyAttachmentPath(a.filepath)
+          if (safePath) content = await readFile(safePath)
+        }
+        if (!content) continue
+        copiedAttachments.push({
+          filename: a.filename,
+          filepath: null,
+          content,
+          mimetype: a.mimetype,
+          size: content.byteLength,
+        })
       } catch {
         // Skip unreadable files rather than failing the whole duplicate.
       }
@@ -81,4 +90,4 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     console.error('duplicate session error', e)
     return NextResponse.json({ error: e?.message || 'Failed to duplicate campaign' }, { status: 500 })
   }
-}
+})

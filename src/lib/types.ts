@@ -29,9 +29,9 @@ export interface ParsedCsv {
 export interface StagedAttachment {
   stagingId: string
   filename: string
-  filepath: string
   mimetype: string
   size: number
+  filepath?: string | null
 }
 
 // Suggestion returned by the local smart-suggestions engine (/api/suggest).
@@ -78,9 +78,9 @@ export interface SessionDetail extends SessionSummary {
 
 export interface Attachment {
   id: string
-  sessionId: string
+  sessionId: string | null
   filename: string
-  filepath: string
+  filepath: string | null
   mimetype: string
   size: number
   createdAt: string

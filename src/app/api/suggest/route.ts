@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withWorkspace } from '@/lib/workspace-context'
 
 export const runtime = 'nodejs'
 
@@ -39,7 +40,7 @@ const DOMAIN_PROVIDER: { test: RegExp; value: string }[] = [
   { test: /@amazonaws\.com$/i, value: 'ses' },
 ]
 
-export async function POST(req: NextRequest) {
+export const POST = withWorkspace(async (req: NextRequest) => {
   try {
     const body = await req.json()
     const {
@@ -182,4 +183,4 @@ export async function POST(req: NextRequest) {
     console.error('suggest error', e)
     return NextResponse.json({ suggestions: [] })
   }
-}
+})

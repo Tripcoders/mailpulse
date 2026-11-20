@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withWorkspace } from '@/lib/workspace-context'
 
 export const runtime = 'nodejs'
 
@@ -7,7 +8,7 @@ export const runtime = 'nodejs'
 // Re-queues every recipient as pending, zeroes counters and returns the
 // session to draft with a clean log, ready to send again with (optionally)
 // new credentials. Refused while a send is active.
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const POST = withWorkspace(async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   try {
     const { id } = await params
     const session = await db.emailSession.findUnique({ where: { id } })
@@ -19,8 +20,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await db.$transaction([
       db.emailRecipient.updateMany({
         where: { sessionId: id },
-        data: { status: 'pending', error: null, attemptCount: 0, sentAt: null },
+        data: { status: 'pending', claimToken: null, error: null, attemptCount: 0, sentAt: null },
       }),
+      db.campaignSmtpCredential.deleteMany({ where: { sessionId: id } }),
       db.sendLog.deleteMany({ where: { sessionId: id } }),
       db.emailSession.update({
         where: { id },
@@ -44,4 +46,4 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     console.error('reset session error', e)
     return NextResponse.json({ error: e?.message || 'Failed to reset campaign' }, { status: 500 })
   }
-}
+})

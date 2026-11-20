@@ -1,4 +1,5 @@
 import { io, Socket } from 'socket.io-client'
+import { getEngineApiToken } from '@/lib/engine-auth'
 
 /**
  * Control channel to the email-sender mini-service with a built-in backup:
@@ -20,6 +21,8 @@ let socket: Socket | null = null
 let connecting: Promise<Socket> | null = null
 
 function getSocket(): Promise<Socket> {
+  const engineToken = getEngineApiToken()
+  if (!engineToken) return Promise.reject(new Error('ENGINE_API_TOKEN is not configured'))
   if (socket && socket.connected) return Promise.resolve(socket)
   if (connecting) return connecting
 
@@ -28,6 +31,7 @@ function getSocket(): Promise<Socket> {
     // so connect directly to the mini-service — no proxy involved.
     const s = io(ENGINE_URL, {
       transports: ['websocket'],
+      auth: { token: engineToken },
       reconnection: false,
       timeout: 6000,
       forceNew: true,
@@ -58,9 +62,11 @@ function getSocket(): Promise<Socket> {
 }
 
 async function postEngine(path: string, payload?: any, timeoutMs = 10000): Promise<any> {
+  const engineToken = getEngineApiToken()
+  if (!engineToken) throw new Error('ENGINE_API_TOKEN is not configured')
   const res = await fetch(`${CONTROL_URL}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + engineToken },
     body: JSON.stringify(payload || {}),
     signal: AbortSignal.timeout(timeoutMs),
   })
@@ -114,8 +120,18 @@ export async function pauseSession(sessionId: string) {
     const s = await getSocket()
     s.emit('control:pause', { sessionId })
     return
-  } catch { /* fall through */ }
-  try { await postEngine('/control/pause', { sessionId }) } catch (e) { console.error('pause error', e) }
+  } catch (socketError) {
+    try {
+      await postEngine('/control/pause', { sessionId })
+      return
+    } catch (httpError) {
+      console.error('Campaign pause handoff failed:', {
+        socketError: socketError instanceof Error ? socketError.message : 'UnknownError',
+        httpError: httpError instanceof Error ? httpError.message : 'UnknownError',
+      })
+      throw new Error('Could not reach the sender to pause this campaign. Refresh its status and try again.')
+    }
+  }
 }
 
 export async function resumeSession(sessionId: string) {
@@ -123,8 +139,18 @@ export async function resumeSession(sessionId: string) {
     const s = await getSocket()
     s.emit('control:resume', { sessionId })
     return
-  } catch { /* fall through */ }
-  try { await postEngine('/control/resume', { sessionId }) } catch (e) { console.error('resume error', e) }
+  } catch (socketError) {
+    try {
+      await postEngine('/control/resume', { sessionId })
+      return
+    } catch (httpError) {
+      console.error('Campaign resume handoff failed:', {
+        socketError: socketError instanceof Error ? socketError.message : 'UnknownError',
+        httpError: httpError instanceof Error ? httpError.message : 'UnknownError',
+      })
+      throw new Error('Could not reach the sender to resume this campaign. Refresh its status and try again.')
+    }
+  }
 }
 
 export async function cancelSession(sessionId: string) {
@@ -132,8 +158,18 @@ export async function cancelSession(sessionId: string) {
     const s = await getSocket()
     s.emit('control:cancel', { sessionId })
     return
-  } catch { /* fall through */ }
-  try { await postEngine('/control/cancel', { sessionId }) } catch (e) { console.error('cancel error', e) }
+  } catch (socketError) {
+    try {
+      await postEngine('/control/cancel', { sessionId })
+      return
+    } catch (httpError) {
+      console.error('Campaign cancel handoff failed:', {
+        socketError: socketError instanceof Error ? socketError.message : 'UnknownError',
+        httpError: httpError instanceof Error ? httpError.message : 'UnknownError',
+      })
+      throw new Error('Could not reach the sender to cancel this campaign. Refresh its status and try again.')
+    }
+  }
 }
 
 export async function resendSession(sessionId: string) {
@@ -141,6 +177,16 @@ export async function resendSession(sessionId: string) {
     const s = await getSocket()
     s.emit('control:resend', { sessionId })
     return
-  } catch { /* fall through */ }
-  try { await postEngine('/control/resend', { sessionId }) } catch (e) { console.error('resend error', e) }
+  } catch (socketError) {
+    try {
+      await postEngine('/control/resend', { sessionId })
+      return
+    } catch (httpError) {
+      console.error('Campaign resend handoff failed:', {
+        socketError: socketError instanceof Error ? socketError.message : 'UnknownError',
+        httpError: httpError instanceof Error ? httpError.message : 'UnknownError',
+      })
+      throw new Error('Could not reach the sender to retry failed recipients. Check campaign progress and try again.')
+    }
+  }
 }

@@ -1,32 +1,45 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
-import { join } from 'path'
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
+import { dirname, join } from 'path'
 
-// The key comes from SECRET_KEY when set — a stable value shared by every
-// serverless instance, so a password remembered on one request can be
-// decrypted on the next. Containers/VPS can instead mount SECRET_KEY_PATH, and
-// local dev falls back to db/secret.key, generated on first use. It never
-// leaves the server and is never included in any API response.
+// Production requires SECRET_KEY to be stable across web and worker instances,
+// so SMTP passwords encrypted by one request can be decrypted by another.
+// SECRET_KEY_PATH and db/secret.key are local-development fallbacks only. The
+// key never leaves the server and is never included in an API response.
 const SECRET = process.env.SECRET_KEY || ''
 const KEY_PATH = process.env.SECRET_KEY_PATH || join(process.cwd(), 'db', 'secret.key')
+const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL)
 
 let cachedKey: Buffer | null = null
 
+export function hasStableEncryptionKey() {
+  if (SECRET.trim().length >= 32) return true
+  if (isProduction) return false
+  try {
+    return existsSync(/*turbopackIgnore: true*/ KEY_PATH) &&
+      readFileSync(/*turbopackIgnore: true*/ KEY_PATH, 'utf8').trim().length >= 32
+  } catch {
+    return false
+  }
+}
+
 function getKey(): Buffer {
   if (cachedKey) return cachedKey
-  if (SECRET) {
-    cachedKey = scryptSync(SECRET, 'mailpulse-salt-v1', 32)
+  if (hasStableEncryptionKey()) {
+    cachedKey = scryptSync(SECRET.trim(), 'mailpulse-salt-v1', 32)
     return cachedKey
   }
+  if (isProduction) {
+    throw new Error('Set a stable SECRET_KEY of at least 32 characters in every MailPulse runtime that reads stored sender credentials.')
+  }
   if (existsSync(/*turbopackIgnore: true*/ KEY_PATH)) {
-    cachedKey = scryptSync(readFileSync(/*turbopackIgnore: true*/ KEY_PATH, 'utf8').trim(), 'mailpulse-salt-v1', 32)
+    const fileSecret = readFileSync(/*turbopackIgnore: true*/ KEY_PATH, 'utf8').trim()
+    if (fileSecret.length < 32) throw new Error('The local SMTP encryption key file must contain at least 32 characters.')
+    cachedKey = scryptSync(fileSecret, 'mailpulse-salt-v1', 32)
   } else {
     const raw = randomBytes(32).toString('hex')
-    try {
-      writeFileSync(KEY_PATH, raw, { mode: 0o600 })
-    } catch {
-      // e.g. read-only fs — fall back to a process-lifetime key
-    }
+    mkdirSync(dirname(KEY_PATH), { recursive: true })
+    writeFileSync(KEY_PATH, raw, { mode: 0o600 })
     cachedKey = scryptSync(raw, 'mailpulse-salt-v1', 32)
   }
   return cachedKey

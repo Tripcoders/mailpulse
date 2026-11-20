@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { hasCampaignQueueSchema, isVercelCampaignQueueEnabled } from '@/lib/campaign-queue'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -15,8 +16,24 @@ function allowedValue<T extends string>(value: unknown, allowed: readonly T[]): 
   return typeof value === 'string' && allowed.includes(value as T) ? value as T : undefined
 }
 
-function recommendations(code: string, controlTokenConfigured: boolean) {
+function recommendations(code: string, controlTokenConfigured: boolean, queueMode = false) {
   const steps: string[] = []
+
+  if (queueMode) {
+    if (code === 'queue_schema_missing') {
+      steps.push('Apply the reviewed campaign-queue migration to the intended Neon branch before enabling campaign delivery.')
+    } else if (code === 'queue_schema_unavailable') {
+      steps.push('Restore read access to the intended Neon database, then rerun this check. No queue work was submitted.')
+    } else if (code === 'queue_transport_unverified') {
+      steps.push('The Neon queue schema is ready, but this read-only check cannot confirm that Vercel Queues invokes the deployed consumer. Delivery remains unverified.')
+      steps.push('Keep campaigns on hold until the Vercel Queue trigger and consumer deployment are confirmed. Verifying delivery requires an explicitly authorized end-to-end check.')
+    } else {
+      steps.push('Campaign delivery is routed through Vercel Queues; the separate sender URL and ENGINE_API_TOKEN are not used in this mode.')
+      steps.push('Confirm Vercel Queues is available for this project and the deployment includes the campaign consumer route. This read-only check does not enqueue work.')
+    }
+    steps.push('Before a larger campaign, verify the SMTP profile and perform a controlled test only after you authorize it, using an address you control.')
+    return steps
+  }
 
   if (code === 'missing_engine_url') {
     steps.push('Deploy the sender as a persistent service, then set ENGINE_URL and ENGINE_CONTROL_URL in the Vercel project to its stable HTTPS address.')
@@ -53,24 +70,63 @@ function recommendations(code: string, controlTokenConfigured: boolean) {
 }
 
 function result(
-  status: 'ok' | 'down',
+  status: 'ok' | 'down' | 'unverified',
   code: string,
   message: string,
   fields: Record<string, unknown>,
   httpStatus = status === 'ok' ? 200 : 503,
 ) {
+  const queueMode = fields.mode === 'vercel-queue'
   return NextResponse.json(
-    { status, code, message, ...fields, repairSteps: recommendations(code, Boolean(fields.controlTokenConfigured)) },
+    { status, code, message, ...fields, repairSteps: recommendations(code, Boolean(fields.controlTokenConfigured), queueMode) },
     { status: httpStatus, headers: { 'Cache-Control': 'no-store' } },
   )
 }
 
 export async function GET() {
   const checkedAt = new Date().toISOString()
+  const queueMode = isVercelCampaignQueueEnabled()
   const controlUrl = process.env.ENGINE_CONTROL_URL?.trim() || process.env.ENGINE_URL?.trim() || ''
   const configured = Boolean(controlUrl)
   const controlTokenConfigured = Boolean(process.env.ENGINE_API_TOKEN?.trim())
-  const common = { configured, controlTokenConfigured, checkedAt }
+  const common = {
+    configured,
+    controlTokenConfigured,
+    controlTokenRequired: !queueMode,
+    mode: queueMode ? 'vercel-queue' : 'persistent-worker',
+    checkedAt,
+  }
+
+  if (queueMode) {
+    let queueSchemaReady: boolean | null = null
+    try {
+      queueSchemaReady = await hasCampaignQueueSchema()
+    } catch {
+      queueSchemaReady = null
+    }
+    if (queueSchemaReady === null) {
+      return result(
+        'down',
+        'queue_schema_unavailable',
+        'Neon could not be reached to inspect campaign queue readiness.',
+        { ...common, configured: true, queueSchemaReady: null },
+      )
+    }
+    if (!queueSchemaReady) {
+      return result(
+        'down',
+        'queue_schema_missing',
+        'Campaign queue mode is selected, but the Neon queue-delivery schema is incomplete.',
+        { ...common, configured: true, queueSchemaReady: false },
+      )
+    }
+    return result(
+      'unverified',
+      'queue_transport_unverified',
+      'The Neon queue schema is ready, but this read-only check cannot confirm that Vercel Queues invokes the deployed consumer. No queue message or email was sent; delivery remains unverified.',
+      { ...common, configured: true, queueSchemaReady: true },
+    )
+  }
 
   if (!configured && process.env.NODE_ENV === 'production') {
     return result('down', 'missing_engine_url', 'No sender URL is configured for this deployment.', common)

@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { encryptSecret } from '@/lib/crypto'
+import { withWorkspace } from '@/lib/workspace-context'
+import { currentWorkspaceId } from '@/lib/workspace-store'
 
 export const runtime = 'nodejs'
 
 // GET /api/smtp/profiles — saved senders. Passwords are NEVER returned.
-export async function GET() {
+export const GET = withWorkspace(async (_req: NextRequest) => {
   try {
     const profiles = await db.smtpProfile.findMany({
       orderBy: [{ isDefault: 'desc' }, { lastUsedAt: 'desc' }],
@@ -20,13 +22,13 @@ export async function GET() {
     console.error('profiles get error', e)
     return NextResponse.json({ profiles: [] })
   }
-}
+})
 
 // POST /api/smtp/profiles — create or update a saved sender.
 // Body: { id?, name?, providerType, fromName, fromEmail, smtpHost?,
 //         smtpPort?, smtpSecure?, smtpUser, smtpPass?, setDefault? }
 // Passing smtpPass stores it encrypted; omitting it keeps the existing password.
-export async function POST(req: NextRequest) {
+export const POST = withWorkspace(async (req: NextRequest) => {
   try {
     const body = await req.json()
     const { id, name, providerType, fromName, fromEmail, smtpHost, smtpPort, smtpSecure, smtpUser, smtpPass, setDefault } = body
@@ -37,7 +39,7 @@ export async function POST(req: NextRequest) {
     const existingById = id
       ? await db.smtpProfile.findUnique({ where: { id: String(id) } })
       : null
-    const existingByUser = await db.smtpProfile.findUnique({ where: { smtpUser: String(smtpUser) } })
+    const existingByUser = await db.smtpProfile.findFirst({ where: { smtpUser: String(smtpUser) } })
 
     // Changing the login of one sender must not collide with another sender.
     if (existingById && existingByUser && existingByUser.id !== existingById.id) {
@@ -67,7 +69,12 @@ export async function POST(req: NextRequest) {
     } else {
       if (existingByUser && !smtpPass) data.smtpPassEnc = existingByUser.smtpPassEnc
       profile = await db.smtpProfile.upsert({
-        where: { smtpUser: String(smtpUser) },
+        where: {
+          workspaceId_smtpUser: {
+            workspaceId: currentWorkspaceId(),
+            smtpUser: String(smtpUser),
+          },
+        },
         update: data,
         create: { ...data, smtpPassEnc: data.smtpPassEnc || '' },
       })
@@ -86,11 +93,11 @@ export async function POST(req: NextRequest) {
     console.error('profiles post error', e)
     return NextResponse.json({ error: e?.message || 'Failed to save profile' }, { status: 500 })
   }
-}
+}, { writeRole: 'admin' })
 
 // PATCH /api/smtp/profiles — rename, make default, or revoke the stored password.
 // Body: { id, name?, isDefault?, clearPassword? }
-export async function PATCH(req: NextRequest) {
+export const PATCH = withWorkspace(async (req: NextRequest) => {
   try {
     const body = await req.json()
     const id = String(body.id || '')
@@ -118,10 +125,10 @@ export async function PATCH(req: NextRequest) {
     console.error('profiles patch error', e)
     return NextResponse.json({ error: e?.message || 'Failed to update sender' }, { status: 500 })
   }
-}
+}, { writeRole: 'admin' })
 
 // DELETE /api/smtp/profiles?id=
-export async function DELETE(req: NextRequest) {
+export const DELETE = withWorkspace(async (req: NextRequest) => {
   try {
     const id = req.nextUrl.searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
@@ -141,4 +148,4 @@ export async function DELETE(req: NextRequest) {
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Delete failed' }, { status: 500 })
   }
-}
+}, { writeRole: 'admin' })

@@ -1,21 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { writeFile, mkdir, access } from 'fs/promises'
-import { join } from 'path'
-import { randomUUID } from 'crypto'
+import { db } from '@/lib/db'
+import { withWorkspace } from '@/lib/workspace-context'
 
 export const runtime = 'nodejs'
 
-// Repo-local staging dir by default; configurable for Docker/production
-// (docker-compose mounts a shared volume and passes UPLOAD_DIR to both the
-// web app and the send engine so attachments survive restarts and work
-// across containers). On Vercel's serverless platform the filesystem is
-// read-only except /tmp, so we stage uploads there.
-export const UPLOAD_DIR = process.env.UPLOAD_DIR || (process.env.VERCEL ? '/tmp/upload' : join(process.cwd(), 'upload'))
+const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024
+const STAGED_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000
 
-// POST /api/attachments/upload  (FormData: field "file")
-// Stages an attachment on disk and returns its metadata. The file is linked to a
-// session at session-creation time (caller passes the metadata back).
-export async function POST(req: NextRequest) {
+function safeFilename(value: string) {
+  return value.replace(/[\\/\0-\x1f\x7f]+/g, '_').trim().slice(0, 255) || 'attachment'
+}
+
+function safeMimeType(value: string) {
+  return /^[\w.+-]+\/[\w.+-]+$/.test(value) ? value : 'application/octet-stream'
+}
+
+// POST /api/attachments/upload (FormData: field "file")
+// Staged bytes live in Neon for 24 hours and are claimed by a campaign at creation.
+export const POST = withWorkspace(async (req: NextRequest) => {
   try {
     const formData = await req.formData()
     const file = formData.get('file')
@@ -23,51 +25,44 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No file uploaded. Please select a file.' }, { status: 400 })
     }
 
-    // 25 MB limit
-    if (file.size > 25 * 1024 * 1024) {
-      return NextResponse.json({ error: 'File too large (max 25MB)' }, { status: 400 })
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      return NextResponse.json({ error: 'File too large (max 4 MiB per attachment).' }, { status: 413 })
     }
-
     if (file.size === 0) {
-      return NextResponse.json({ error: 'File is empty' }, { status: 400 })
+      return NextResponse.json({ error: 'File is empty.' }, { status: 400 })
     }
 
-    const stagingId = randomUUID()
-    const dir = join(UPLOAD_DIR, stagingId)
-    try {
-      await mkdir(dir, { recursive: true })
-    } catch (mkdirErr: any) {
-      // If mkdir fails, try /tmp as fallback
-      const fallbackDir = join('/tmp', 'upload', stagingId)
-      await mkdir(fallbackDir, { recursive: true })
-      // Use fallback
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '_')
-      const filepath = join(fallbackDir, safeName)
-      const buf = Buffer.from(await file.arrayBuffer())
-      await writeFile(filepath, buf)
-      return NextResponse.json({
-        stagingId,
-        filename: file.name,
-        filepath,
-        mimetype: file.type || 'application/octet-stream',
+    const now = new Date()
+    await db.attachment.deleteMany({
+      where: { sessionId: null, expiresAt: { lt: now } },
+    })
+
+    const content = Buffer.from(await file.arrayBuffer())
+    if (content.byteLength !== file.size) {
+      return NextResponse.json({ error: 'The uploaded file was incomplete. Please try again.' }, { status: 400 })
+    }
+
+    const attachment = await db.attachment.create({
+      data: {
+        filename: safeFilename(file.name),
+        filepath: null,
+        content,
+        mimetype: safeMimeType(file.type),
         size: file.size,
-      })
-    }
-
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '_')
-    const filepath = join(dir, safeName)
-    const buf = Buffer.from(await file.arrayBuffer())
-    await writeFile(filepath, buf)
+        sessionId: null,
+        expiresAt: new Date(now.getTime() + STAGED_ATTACHMENT_TTL_MS),
+      },
+      select: { id: true, filename: true, mimetype: true, size: true },
+    })
 
     return NextResponse.json({
-      stagingId,
-      filename: file.name,
-      filepath,
-      mimetype: file.type || 'application/octet-stream',
-      size: file.size,
+      stagingId: attachment.id,
+      filename: attachment.filename,
+      mimetype: attachment.mimetype,
+      size: attachment.size,
     })
-  } catch (e: any) {
-    console.error('Upload error:', e)
-    return NextResponse.json({ error: e?.message || 'Upload failed. Please try again.' }, { status: 500 })
+  } catch (error) {
+    console.error('Attachment upload failed:', error instanceof Error ? error.name : 'UnknownError')
+    return NextResponse.json({ error: 'Upload failed. Please try again.' }, { status: 500 })
   }
-}
+})

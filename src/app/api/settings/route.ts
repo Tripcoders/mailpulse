@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withWorkspace } from '@/lib/workspace-context'
+import { currentWorkspaceId } from '@/lib/workspace-store'
 
 export const runtime = 'nodejs'
 
 // GET /api/settings — remembered preferences from previous sessions.
-export async function GET() {
+export const GET = withWorkspace(async (_req: NextRequest) => {
   try {
     const rows = await db.setting.findMany()
     const settings: Record<string, any> = {}
@@ -16,10 +18,10 @@ export async function GET() {
     console.error('settings get error', e)
     return NextResponse.json({ settings: {} })
   }
-}
+})
 
 // PUT /api/settings — body: { key: value, ... } (each stored as JSON).
-export async function PUT(req: NextRequest) {
+export const PUT = withWorkspace(async (req: NextRequest) => {
   try {
     const body = await req.json()
     const keys = Object.keys(body).slice(0, 20)
@@ -27,7 +29,7 @@ export async function PUT(req: NextRequest) {
       if (!/^[\w.-]{1,64}$/.test(key)) continue
       const value = JSON.stringify(body[key] ?? null)
       await db.setting.upsert({
-        where: { key },
+        where: { workspaceId_key: { workspaceId: currentWorkspaceId(), key } },
         update: { value },
         create: { key, value },
       })
@@ -37,4 +39,4 @@ export async function PUT(req: NextRequest) {
     console.error('settings put error', e)
     return NextResponse.json({ error: e?.message || 'Failed to save settings' }, { status: 500 })
   }
-}
+})
