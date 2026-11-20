@@ -2,13 +2,14 @@
 
 import { FormEvent, useState } from 'react'
 import Link from 'next/link'
-import { createAuthClient } from '@neondatabase/auth/next'
+import { createAuthClient } from '@neondatabase/auth'
+import { BetterAuthReactAdapter } from '@neondatabase/auth/react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
-const auth = createAuthClient()
+const auth = createAuthClient(process.env.NEXT_PUBLIC_NEON_AUTH_BASE_URL!, { adapter: BetterAuthReactAdapter() })
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
