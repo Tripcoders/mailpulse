@@ -156,11 +156,11 @@ export const POST = withWorkspace(async (req: NextRequest) => {
           totalEmails: normalizedRecipients.length,
           pendingCount: normalizedRecipients.length,
           status: 'draft',
+          // sessionId + workspaceId form a compound FK to EmailSession. Prisma
+          // sets both automatically for nested creates and rejects them if
+          // supplied explicitly ("Unknown argument workspaceId").
           recipients: {
-            create: normalizedRecipients.map((recipient: { email: string; name: string }) => ({
-              ...recipient,
-              workspaceId: context.workspaceId,
-            })),
+            create: normalizedRecipients.map((recipient: { email: string; name: string }) => ({ ...recipient })),
           },
         },
       })

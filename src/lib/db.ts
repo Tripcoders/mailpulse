@@ -49,35 +49,17 @@ const writeOperations = new Set([
   'upsert',
 ])
 
-function scopeData(data: any, workspaceId: string, includeCampaignChildren = false): any {
+// Adds the tenant id to a model's own data only. Nested relation writes are
+// deliberately left untouched: EmailRecipient/Attachment/SendLog link to
+// EmailSession through the compound FK (sessionId, workspaceId), so Prisma
+// derives both from the parent and rejects them if passed explicitly
+// ("Unknown argument workspaceId" / PrismaClientValidationError).
+function scopeData(data: any, workspaceId: string): any {
   if (Array.isArray(data)) {
-    return data.map((item) => scopeData(item, workspaceId, includeCampaignChildren))
+    return data.map((item) => scopeData(item, workspaceId))
   }
   if (!data || typeof data !== 'object') return data
-
-  const scoped = { ...data, workspaceId }
-  if (includeCampaignChildren) {
-    for (const relation of ['recipients', 'attachments', 'logs']) {
-      const nested = scoped[relation]
-      if (!nested || typeof nested !== 'object') continue
-
-      const nestedScoped = { ...nested }
-      if ('create' in nestedScoped) {
-        nestedScoped.create = scopeData(nestedScoped.create, workspaceId)
-      }
-      if ('createMany' in nestedScoped) {
-        const createMany = nestedScoped.createMany
-        if (createMany && typeof createMany === 'object' && 'data' in createMany) {
-          nestedScoped.createMany = {
-            ...createMany,
-            data: scopeData(createMany.data, workspaceId),
-          }
-        }
-      }
-      scoped[relation] = nestedScoped
-    }
-  }
-  return scoped
+  return { ...data, workspaceId }
 }
 
 function withWorkspaceWhere(args: Record<string, any>, workspaceId: string) {
@@ -120,13 +102,13 @@ const scopedDb =
           }
 
           if (operation === 'create') {
-            scopedArgs.data = scopeData(scopedArgs.data, workspaceId, model === 'EmailSession')
+            scopedArgs.data = scopeData(scopedArgs.data, workspaceId)
           } else if (operation === 'createMany' || operation === 'createManyAndReturn') {
             scopedArgs.data = scopeData(scopedArgs.data, workspaceId)
           } else if (operation === 'update' || operation === 'updateMany' || operation === 'updateManyAndReturn') {
             scopedArgs.data = scopeData(scopedArgs.data, workspaceId)
           } else if (operation === 'upsert') {
-            scopedArgs.create = scopeData(scopedArgs.create, workspaceId, model === 'EmailSession')
+            scopedArgs.create = scopeData(scopedArgs.create, workspaceId)
             scopedArgs.update = scopeData(scopedArgs.update, workspaceId)
           }
 
