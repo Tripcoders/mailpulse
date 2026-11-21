@@ -345,7 +345,7 @@ export default function Home() {
         <div className="flex items-center justify-between px-4 h-14">
           <div className="flex items-center gap-2.5">
               <img src="/logo.svg" alt="Mail Pulse" className="h-8 w-auto" />
-              <h1 className="font-semibold text-base">Mail Pulse</h1>
+              <h1 className="mailpulse-logo text-base font-semibold">Mail Pulse</h1>
               <WorkspaceSwitcher />
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2">

@@ -49,7 +49,7 @@ export default function AuthCallbackPage() {
       <div className="w-full max-w-md text-center">
         <div className="mb-6 flex items-center justify-center gap-3">
           <img src="/logo.svg" alt="" className="h-10 w-auto" />
-          <span className="font-[family-name:var(--font-jakarta)] text-xl font-bold">Mail Pulse</span>
+          <span className="mailpulse-logo text-xl font-bold">Mail Pulse</span>
         </div>
         <div className="flex flex-col items-center gap-4">
           {status === 'loading' && (

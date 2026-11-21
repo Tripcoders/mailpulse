@@ -128,6 +128,14 @@
   }
 }
 
+/* Mail Pulse wordmark — Poppins, the exact blue used by logo.svg (#0F5EC5),
+   and zero letter spacing so the letters sit tight like the icon. */
+.mailpulse-logo {
+  font-family: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
+  color: #0F5EC5;
+  letter-spacing: 0;
+}
+
 /* Brand accent — blue */
 .brand {
   color: oklch(0.52 0.15 255);

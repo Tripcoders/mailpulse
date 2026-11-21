@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans, Lato, Geist_Mono } from "next/font/google";
+import { Plus_Jakarta_Sans, Lato, Geist_Mono, Poppins } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -24,6 +24,13 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Mail Pulse wordmark only — Poppins, zero letter spacing, icon blue.
+const poppins = Poppins({
+  variable: "--font-poppins",
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+});
+
 export const metadata: Metadata = {
   title: "MailPulse — Bulk Email Sender",
   description: "Upload a CSV, compose your message, and send up to 1,000 personalized emails via Gmail, Yahoo or any SMTP with real-time logs.",
@@ -38,7 +45,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${jakarta.variable} ${lato.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
+        className={`${jakarta.variable} ${lato.variable} ${geistMono.variable} ${poppins.variable} antialiased bg-background text-foreground`}
       >
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           <GlobalErrorReporter />
